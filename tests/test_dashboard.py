@@ -292,7 +292,9 @@ def test_view_study_groups_members_and_lineage(isolate_omd_data):
     study = rm.view_study("trade-1")
     member_ids = {m["plan_id"] for m in study["members"]}
     assert member_ids == {"opt-a", "opt-b"}  # opt-c excluded
-    assert {"source": "opt-a", "target": "opt-b"} in study["lineage"]
+    lineage = study["graph"]["edges"]
+    assert any(e["data"]["source"] == "opt-a" and e["data"]["target"] == "opt-b"
+               for e in lineage)
     assert "fuelburn" in study["metric_keys"]
     member_b = next(m for m in study["members"] if m["plan_id"] == "opt-b")
     assert member_b["metrics"]["fuelburn"] == 8200.0
@@ -360,13 +362,13 @@ def test_app_view_fragments_render(isolate_omd_data):
     assert reqs.status_code == 200 and "R1" in reqs.text and "status-verified" in reqs.text
 
     plan_frag = client.get("/view/plan/study-1")
-    assert 'data-cy="plan"' in plan_frag.text and "plan-graph-data" in plan_frag.text
+    assert 'data-cy="provenance"' in plan_frag.text and "plan-graph-data" in plan_frag.text
 
     study_frag = client.get("/view/study/wings")
     assert 'data-cy="study"' in study_frag.text and "structural_mass" in study_frag.text
 
     reasoning = client.get("/view/reasoning/study-1")
-    assert 'data-cy="reasoning"' in reasoning.text
+    assert 'data-cy="provenance"' in reasoning.text
 
     report = client.get("/view/report/study-1")
     assert report.status_code == 200 and "scorecard" in report.text

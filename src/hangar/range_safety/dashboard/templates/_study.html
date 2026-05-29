@@ -7,7 +7,7 @@
 <div class="empty">No plans belong to this study (set <code class="path">metadata.study</code> on member plans).</div>
 {% else %}
 <div class="cy-graph" data-cy="study" data-json="study-graph-data"></div>
-<script type="application/json" id="study-graph-data">{{ {"nodes": data.members, "lineage": data.lineage} | tojson }}</script>
+<script type="application/json" id="study-graph-data">{{ data.graph | tojson }}</script>
 
 <div class="group-label">Study matrix</div>
 <table class="grid">

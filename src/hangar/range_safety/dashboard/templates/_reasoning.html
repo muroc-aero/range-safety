@@ -12,9 +12,9 @@
   <span><span class="legend-dot" style="background:#9a6add"></span>justifies</span>
 </div>
 
-{% if not data.nodes %}
+{% if not data.graph.nodes %}
 <div class="empty">No reasoning trace recorded yet (no run / assessment / decision entities).</div>
 {% else %}
-<div class="cy-graph" data-cy="reasoning" data-json="reasoning-graph-data"></div>
-<script type="application/json" id="reasoning-graph-data">{{ {"nodes": data.nodes, "edges": data.edges} | tojson }}</script>
+<div class="cy-graph" data-cy="provenance" data-json="reasoning-graph-data"></div>
+<script type="application/json" id="reasoning-graph-data">{{ data.graph | tojson }}</script>
 {% endif %}

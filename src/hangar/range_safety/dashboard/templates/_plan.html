@@ -10,8 +10,8 @@
   <span><span class="legend-dot" style="background:#15321f"></span>requirement</span>
 </div>
 
-<div class="cy-graph" data-cy="plan" data-json="plan-graph-data"></div>
-<script type="application/json" id="plan-graph-data">{{ {"nodes": data.nodes, "edges": data.edges} | tojson }}</script>
+<div class="cy-graph" data-cy="provenance" data-json="plan-graph-data"></div>
+<script type="application/json" id="plan-graph-data">{{ data.graph | tojson }}</script>
 
 {% if data.decisions %}
 <div class="group-label">Decisions</div>

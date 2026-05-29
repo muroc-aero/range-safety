@@ -34,6 +34,26 @@ from hangar.range_safety.dashboard.plan_store import (
 _VERIFY_RELATIONS = frozenset({"verifies", "satisfies", "violates"})
 
 
+def _short_id(entity_id: str) -> str:
+    """A compact label for long run/entity ids."""
+    eid = str(entity_id or "")
+    return eid if len(eid) <= 24 else eid[:10] + "..." + eid[-8:]
+
+
+def _reasoning_label(entity_id: str, entity_type: str, meta: dict) -> str:
+    """Legible node label for the reasoning trace (mirrors the omd labels)."""
+    if entity_type == "decision":
+        text = str(meta.get("reasoning") or meta.get("decision")
+                   or meta.get("rationale") or "Decision")
+        return text[:140]
+    if entity_type == "requirement":
+        status = meta.get("status")
+        return f"{entity_id}" + (f"\n[{status}]" if status else "")
+    if entity_type == "assessment":
+        return "assessment"
+    return _short_id(entity_id)
+
+
 def _parse_metadata(entity: dict) -> dict:
     raw = (entity or {}).get("metadata")
     if isinstance(raw, dict):
@@ -155,31 +175,19 @@ class ReadModel:
 
     def view_plan(self, plan_id: str, version: int | None = None) -> dict:
         plan = self._plan(plan_id, version)
-        dag = self._dag(plan_id)
-        nodes = [
-            {
-                "id": e.get("entity_id"),
-                "entity_type": e.get("entity_type"),
-                "parent_id": e.get("parent_id"),
-                "version": e.get("version"),
-            }
-            for e in dag.get("entities") or []
-        ]
-        edges = [
-            {
-                "relation": e.get("relation"),
-                "source": e.get("subject_id"),
-                "target": e.get("object_id"),
-            }
-            for e in dag.get("edges") or []
-        ]
+        # The plan graph is the omd provenance DAG, built by the shared
+        # element-builder so it matches the omd viewer exactly (decision
+        # boxes, partOf containment, status colors, reversed PROV edges).
+        # Imported lazily so an sdk-only deployment does not require omd.
+        from hangar.omd.provenance import build_provenance_elements  # noqa: PLC0415
+
+        elements = build_provenance_elements(plan_id, db_path=self.db_path)
         return {
             "plan_id": plan_id,
             "version": version if version is not None else latest_version(self.plan_store, plan_id),
             "plan": plan,
             "decisions": plan.get("decisions", []),
-            "nodes": nodes,
-            "edges": edges,
+            "graph": elements,
         }
 
     # -- view 2b: plan diff ------------------------------------------------
@@ -250,7 +258,8 @@ class ReadModel:
             members_ids = [study_id]
 
         members = []
-        lineage = []
+        nodes = []
+        edges = []
         metric_keys: set[str] = set()
         for pid in members_ids:
             plan = self._plan(pid)
@@ -258,23 +267,37 @@ class ReadModel:
             dag = self._dag(pid)
             metrics = self._latest_run_metrics(pid)
             metric_keys.update(metrics)
+            version = latest_version(self.plan_store, pid)
+            current_state = state_machine.infer_current_state(plan, dag)["current"]
             members.append({
                 "plan_id": pid,
-                "version": latest_version(self.plan_store, pid),
+                "version": version,
                 "name": meta.get("name"),
-                "current_state": state_machine.infer_current_state(plan, dag)["current"],
+                "current_state": current_state,
                 "objective": (plan.get("objective") or {}).get("name"),
                 "metrics": metrics,
             })
+            nodes.append({"data": {
+                "id": pid,
+                "label": pid + (f"\nv{version}" if version else ""),
+                "kind": "study_member",
+                "current_state": current_state,
+            }})
             parent = meta.get("derived_from")
             if parent:
-                lineage.append({"source": parent, "target": pid})
+                edges.append({"data": {
+                    "source": parent, "target": pid,
+                    "label": "derived_from", "relation": "wasDerivedFrom",
+                }})
 
+        node_ids = {n["data"]["id"] for n in nodes}
+        edges = [e for e in edges
+                 if e["data"]["source"] in node_ids and e["data"]["target"] in node_ids]
         return {
             "study_id": study_id,
             "members": members,
-            "lineage": lineage,
             "metric_keys": sorted(metric_keys),
+            "graph": {"nodes": nodes, "edges": edges},
         }
 
     # -- view 3: results ---------------------------------------------------
@@ -340,25 +363,34 @@ class ReadModel:
         """
         dag = self._dag(plan_id)
         relevant_types = {"run_record", "assessment", "decision", "requirement"}
+        # Cytoscape-native nodes carrying the normalized `kind` style key, so
+        # the same dashboard renderer/style used for the plan graph applies.
         nodes = []
         for ent in dag.get("entities") or []:
-            if ent.get("entity_type") in relevant_types:
-                nodes.append({
+            etype = ent.get("entity_type")
+            if etype in relevant_types:
+                meta = _parse_metadata(ent)
+                nodes.append({"data": {
                     "id": ent.get("entity_id"),
-                    "entity_type": ent.get("entity_type"),
-                    "metadata": _parse_metadata(ent),
-                })
-        node_ids = {n["id"] for n in nodes}
+                    "label": _reasoning_label(ent.get("entity_id"), etype, meta),
+                    "kind": etype,
+                    "type": "entity",
+                    "entity_type": etype,
+                    "status": meta.get("status"),
+                    "metadata": meta,
+                }})
+        node_ids = {n["data"]["id"] for n in nodes}
         reasoning_relations = _VERIFY_RELATIONS | {"justifies", "wasDerivedFrom"}
         # Only keep edges that connect two reasoning nodes; plan-lineage
         # wasDerivedFrom edges into decomposed plan sub-entities are not part
         # of the reasoning trace (and would dangle in the graph).
         edges = [
-            {
-                "relation": e.get("relation"),
+            {"data": {
                 "source": e.get("subject_id"),
                 "target": e.get("object_id"),
-            }
+                "label": e.get("relation"),
+                "relation": e.get("relation"),
+            }}
             for e in dag.get("edges") or []
             if e.get("relation") in reasoning_relations
             and e.get("subject_id") in node_ids
@@ -367,12 +399,13 @@ class ReadModel:
 
         if focus is not None:
             keep = {focus}
-            keep |= {e["target"] for e in edges if e["source"] == focus}
-            keep |= {e["source"] for e in edges if e["target"] == focus}
-            nodes = [n for n in nodes if n["id"] in keep]
-            edges = [e for e in edges if e["source"] in keep and e["target"] in keep]
+            keep |= {e["data"]["target"] for e in edges if e["data"]["source"] == focus}
+            keep |= {e["data"]["source"] for e in edges if e["data"]["target"] == focus}
+            nodes = [n for n in nodes if n["data"]["id"] in keep]
+            edges = [e for e in edges
+                     if e["data"]["source"] in keep and e["data"]["target"] in keep]
 
-        return {"plan_id": plan_id, "focus": focus, "nodes": nodes, "edges": edges}
+        return {"plan_id": plan_id, "focus": focus, "graph": {"nodes": nodes, "edges": edges}}
 
     # -- view 5: report / summary -----------------------------------------
 

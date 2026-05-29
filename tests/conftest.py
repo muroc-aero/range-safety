@@ -13,6 +13,10 @@ def isolate_omd_data(tmp_path, monkeypatch):
     monkeypatch.setenv("OMD_DB_PATH", str(tmp_path / "analysis.db"))
     monkeypatch.setenv("OMD_PLAN_STORE", str(tmp_path / "plans"))
     monkeypatch.setenv("OMD_RECORDINGS_DIR", str(tmp_path / "recordings"))
+    # Isolate the sdk provenance/artifact stack too, so the multi-source
+    # dashboard's SdkSessionSource resolves to the temp dir, not real data.
+    monkeypatch.setenv("HANGAR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OAS_DATA_DIR", str(tmp_path))
     yield tmp_path
 
 

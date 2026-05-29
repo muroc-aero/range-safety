@@ -17,9 +17,9 @@
   <label for="plan-select">Study / plan</label>
   <select id="plan-select" onchange="location.href='/?plan_id=' + encodeURIComponent(this.value)">
     <option value="">-- select --</option>
-    {% for p in plans %}
-    <option value="{{ p.plan_id }}" {% if p.plan_id == plan_id %}selected{% endif %}>
-      {% if p.name %}{{ p.name }} -- {% endif %}{{ p.plan_id }}{% if p.version %} (v{{ p.version }}){% endif %} [{{ state_labels.get(p.current_state, p.current_state) }}]
+    {% for s in studies %}
+    <option value="{{ s.key }}" {% if s.key == plan_id %}selected{% endif %}>
+      [{{ s.source }}] {{ s.label }}{% if s.version %} (v{{ s.version }}){% endif %} -- {{ state_labels.get(s.current_state, s.current_state) }}
     </option>
     {% endfor %}
   </select>

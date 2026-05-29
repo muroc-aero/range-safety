@@ -29,7 +29,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from hangar.range_safety.dashboard import plot_adapter, state_machine
-from hangar.range_safety.dashboard.read_model import ReadModel
+from hangar.range_safety.dashboard.sources import MultiSource
 
 _HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -42,9 +42,9 @@ _OPT_PLOT_TYPES = frozenset({
 })
 
 
-def _read_model() -> ReadModel:
-    # db_path / plan_store default to the environment-configured locations.
-    return ReadModel()
+def _read_model() -> MultiSource:
+    # Aggregates the omd + sdk sources; dispatches by {source}:{id} key.
+    return MultiSource()
 
 
 def _int_param(request, name):
@@ -96,7 +96,7 @@ async def study(request):
 
 
 async def results(request):
-    return JSONResponse(_results_data(_read_model(), request.path_params["run_id"]))
+    return JSONResponse(_read_model().view_results(request.path_params["run_id"]))
 
 
 async def reasoning(request):
@@ -125,16 +125,6 @@ async def plot_image(request):
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
-def _results_data(rm: ReadModel, run_id: str) -> dict:
-    """view_results with the run's plan resolved (so constraints run too)."""
-    return rm.view_results(run_id, plan=rm.plan_for_run(run_id))
-
-
-# ---------------------------------------------------------------------------
 # Shell + server-rendered view fragments
 # ---------------------------------------------------------------------------
 
@@ -144,7 +134,7 @@ async def shell(request):
     plan_id = request.query_params.get("plan_id") or None
     run_id = request.query_params.get("run_id") or None
     ctx = {
-        "plans": rm.list_plans(),
+        "studies": rm.list_studies(),
         "plan_id": plan_id,
         "run_id": run_id,
         "runs": rm.list_runs(plan_id) if plan_id else [],
@@ -205,7 +195,7 @@ async def view_report(request):
 async def view_results(request):
     rm = _read_model()
     return templates.TemplateResponse(request, "_results.html", {
-        "data": _results_data(rm, request.path_params["run_id"])})
+        "data": rm.view_results(request.path_params["run_id"])})
 
 
 async def view_visualization(request):

@@ -1,0 +1,44 @@
+{# View 1 -- Requirements (Gather Requirements state) #}
+<h2 class="view-title">Requirements</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span> &middot; acceptance criteria, status, and verification edges from the verifying stage.</p>
+
+{% if not data.requirements %}
+<div class="empty">No requirements recorded for this plan.</div>
+{% else %}
+{% for prio in ["primary", "secondary", "goal", None] %}
+  {% set group = data.requirements | selectattr("priority", "equalto", prio) | list %}
+  {% if group %}
+  <div class="group-label">{{ prio or "unspecified priority" }}</div>
+  <table class="grid">
+    <thead><tr>
+      <th style="width:8%">ID</th><th style="width:34%">Requirement</th>
+      <th style="width:10%">Status</th><th style="width:28%">Acceptance criteria</th>
+      <th style="width:20%">Verification</th>
+    </tr></thead>
+    <tbody>
+    {% for r in group %}
+      <tr>
+        <td class="mono">{{ r.id }}</td>
+        <td>{{ r.text }}
+          {% if r.traces_to %}<div class="muted" style="margin-top:4px;font-size:11px">traces to:
+            {% for t in r.traces_to %}<code class="path">{{ t }}</code> {% endfor %}</div>{% endif %}
+        </td>
+        <td><span class="chip status-{{ r.status }}">{{ r.status }}</span></td>
+        <td>
+          {% for c in r.acceptance_criteria %}
+            <div class="mono" style="font-size:11px">{{ c.metric }} {{ c.comparator }} {{ c.threshold }}{% if c.units %} {{ c.units }}{% endif %}</div>
+          {% else %}<span class="muted">&mdash;</span>{% endfor %}
+        </td>
+        <td>
+          {% for e in r.verification_edges %}
+            <span class="chip status-{{ 'verified' if e.relation == 'satisfies' else ('violated' if e.relation == 'violates' else 'open') }}"
+                  title="{{ e.subject_id }}">{{ e.relation }}</span>
+          {% else %}<span class="muted">none</span>{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endfor %}
+{% endif %}

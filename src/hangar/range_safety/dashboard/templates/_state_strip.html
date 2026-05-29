@@ -1,0 +1,19 @@
+{# State-machine strip: forward progression with the current state lit,
+   the three feedback loops, and the next-step indicator. Polled. #}
+{% for s in machine.states %}
+  <div class="state-node {% if state and s.id == state.current %}current{% endif %}">{{ s.label }}</div>
+  {% if not loop.last %}<span class="state-arrow">&rarr;</span>{% endif %}
+{% endfor %}
+
+{% if state %}
+<span class="confidence">confidence {{ '%.0f'|format(state.confidence * 100) }}%</span>
+{% if state.next and state.next.forward_state %}
+<span class="next-indicator">next &rarr; {{ state_labels.get(state.next.forward_state, state.next.forward_state) }}</span>
+{% endif %}
+{% endif %}
+
+<div class="state-feedback">
+  {% for e in machine.feedback_edges %}
+  <span class="feedback-chip" title="{{ state_labels.get(e['from'], e['from']) }} &rarr; {{ state_labels.get(e['to'], e['to']) }}">{{ e.trigger }}</span>
+  {% endfor %}
+</div>

@@ -1,0 +1,25 @@
+{# View 2a -- Plan graph (Planning state) #}
+<h2 class="view-title">Plan graph</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span> v{{ data.version }} &middot; provenance entities and relations. Click a node to inspect.</p>
+
+<div class="graph-legend">
+  <span><span class="legend-dot" style="background:#2a4a7f"></span>plan</span>
+  <span><span class="legend-dot" style="background:#1a3a5a"></span>run</span>
+  <span><span class="legend-dot" style="background:#3a2a55"></span>assessment</span>
+  <span><span class="legend-dot" style="background:#2a2a10"></span>decision</span>
+  <span><span class="legend-dot" style="background:#15321f"></span>requirement</span>
+</div>
+
+<div class="cy-graph" data-cy="plan" data-json="plan-graph-data"></div>
+<script type="application/json" id="plan-graph-data">{{ {"nodes": data.nodes, "edges": data.edges} | tojson }}</script>
+
+{% if data.decisions %}
+<div class="group-label">Decisions</div>
+{% for d in data.decisions %}
+<div class="card">
+  <h3>{{ d.id or d.decision_type or "decision" }}</h3>
+  {% if d.reasoning %}<div>{{ d.reasoning }}</div>{% endif %}
+  {% if d.selected_action %}<div class="muted" style="margin-top:4px">action: {{ d.selected_action }}</div>{% endif %}
+</div>
+{% endfor %}
+{% endif %}

@@ -1,0 +1,38 @@
+{# View 5 -- Report / summary (Concluding state) #}
+<h2 class="view-title">Report</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span> v{{ data.version }} &middot;
+  current state: {{ data.current_state }}</p>
+
+<div class="group-label">Requirements scorecard</div>
+<div class="scorecard">
+  {% for key, color in [("verified","#6ade8e"),("violated","#ff8a8a"),("waived","#e0c040"),("open","#7ab0ff"),("draft","#9098b8")] %}
+  <div class="score-tile"><div class="num" style="color:{{ color }}">{{ data.scorecard.get(key, 0) }}</div><div class="lbl">{{ key }}</div></div>
+  {% endfor %}
+</div>
+
+<div class="group-label">Analysis phases</div>
+{% if data.phases %}
+<table class="grid">
+  <thead><tr><th>ID</th><th>Name</th><th>Mode</th></tr></thead>
+  <tbody>
+  {% for p in data.phases %}
+    <tr><td class="mono">{{ p.id }}</td><td>{{ p.name }}</td><td class="muted">{{ p.mode }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty">No analysis-plan phases declared.</div>{% endif %}
+
+<div class="group-label">Replan triggers</div>
+{% if data.replan_triggers %}
+<ul style="margin-left:18px">{% for t in data.replan_triggers %}<li>{{ t }}</li>{% endfor %}</ul>
+{% else %}<div class="muted">None declared.</div>{% endif %}
+
+{% if data.decisions %}
+<div class="group-label">Conclusions &amp; decisions</div>
+{% for d in data.decisions %}
+<div class="card">
+  <h3>{{ d.id or d.decision_type or "decision" }}</h3>
+  {% if d.reasoning %}<div>{{ d.reasoning }}</div>{% endif %}
+</div>
+{% endfor %}
+{% endif %}

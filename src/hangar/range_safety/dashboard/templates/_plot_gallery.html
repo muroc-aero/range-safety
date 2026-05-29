@@ -1,0 +1,10 @@
+{# Views 3b / 3c -- Visualization and Plots (Executing state).
+   Both render the plot adapter's PNGs in a small gallery; they differ only
+   in which plot types they offer. ``title``, ``subtitle``, ``run_id`` and
+   ``plot_types`` come from the route. #}
+<h2 class="view-title">{{ title }}</h2>
+<p class="view-sub">Run <span class="mono">{{ run_id }}</span> &middot; {{ subtitle }}</p>
+
+<div data-plot-gallery data-run-id="{{ run_id }}" data-types='{{ plot_types | tojson }}'>
+  <div class="empty">Loading plots&hellip;</div>
+</div>

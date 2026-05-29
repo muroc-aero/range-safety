@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from starlette.testclient import TestClient
+
 from hangar.omd.db import (
     add_prov_edge,
     init_analysis_db,
@@ -20,6 +22,7 @@ from hangar.omd.db import (
     record_run_case,
 )
 from hangar.range_safety.dashboard import plan_diff, state_machine
+from hangar.range_safety.dashboard.app import app
 from hangar.range_safety.dashboard.read_model import ReadModel
 
 
@@ -265,3 +268,124 @@ def test_read_model_results_reads_final_case(isolate_omd_data):
     results = rm.view_results("run-1")
     assert results["final"]["structural_mass"] == 950.0
     assert len(results["history"]) == 2
+
+
+def test_view_study_groups_members_and_lineage(isolate_omd_data):
+    tmp = isolate_omd_data
+    plan_store = tmp / "plans"
+    base = _base_plan(plan_id="opt-a", version=1, objective={"name": "fuelburn"})
+    base["metadata"]["study"] = "trade-1"
+    child = _base_plan(plan_id="opt-b", version=1, objective={"name": "fuelburn"})
+    child["metadata"]["study"] = "trade-1"
+    child["metadata"]["derived_from"] = "opt-a"
+    other = _base_plan(plan_id="opt-c", version=1)  # different study, excluded
+    other["metadata"]["study"] = "trade-2"
+    _write_plan(plan_store, "opt-a", 1, base)
+    _write_plan(plan_store, "opt-b", 1, child)
+    _write_plan(plan_store, "opt-c", 1, other)
+
+    init_analysis_db(tmp / "analysis.db")
+    record_entity("run-b", "run_record", "test", plan_id="opt-b", version=1)
+    record_run_case("run-b", 0, "final", {"fuelburn": 8200.0, "note": "x"})
+
+    rm = ReadModel(db_path=tmp / "analysis.db", plan_store=plan_store)
+    study = rm.view_study("trade-1")
+    member_ids = {m["plan_id"] for m in study["members"]}
+    assert member_ids == {"opt-a", "opt-b"}  # opt-c excluded
+    assert {"source": "opt-a", "target": "opt-b"} in study["lineage"]
+    assert "fuelburn" in study["metric_keys"]
+    member_b = next(m for m in study["members"] if m["plan_id"] == "opt-b")
+    assert member_b["metrics"]["fuelburn"] == 8200.0
+    assert "note" not in member_b["metrics"]  # non-numeric dropped
+
+
+# ---------------------------------------------------------------------------
+# app: JSON API + server-rendered view fragments (TestClient over env-isolated
+# DB / plan store from the autouse isolate_omd_data fixture)
+# ---------------------------------------------------------------------------
+
+
+def _seed_full_study(tmp: Path) -> None:
+    """Seed the env-pointed DB + plan store with a concluding study."""
+    plan = _base_plan(
+        plan_id="study-1",
+        version=1,
+        requirements=[
+            {"id": "R1", "text": "Min mass", "priority": "primary", "status": "verified",
+             "acceptance_criteria": [{"metric": "structural_mass", "comparator": "<",
+                                      "threshold": 1000.0, "units": "kg"}]},
+        ],
+        design_variables=[{"name": "twist_cp", "lower": -10.0, "upper": 10.0}],
+        constraints=[{"name": "failure", "upper": 0.0}],
+        objective={"name": "structural_mass"},
+    )
+    plan["metadata"]["study"] = "wings"
+    _write_plan(tmp / "plans", "study-1", 1, plan)
+
+    init_analysis_db(tmp / "analysis.db")
+    record_entity("study-1/v1", "plan", "test", plan_id="study-1", version=1)
+    record_entity("run-1", "run_record", "test", plan_id="study-1", version=1)
+    record_entity("assess-1", "assessment", "test", plan_id="study-1")
+    record_entity("dec-1", "decision", "test", plan_id="study-1")
+    add_prov_edge("satisfies", "run-1", "R1")
+    add_prov_edge("justifies", "dec-1", "study-1/v1")
+    record_run_case("run-1", 0, "driver", {"structural_mass": 1200.0, "failure": -0.2})
+    record_run_case("run-1", 1, "final", {"structural_mass": 950.0, "failure": -0.1})
+
+
+def test_api_machine_has_five_states_and_feedback_edges(isolate_omd_data):
+    client = TestClient(app)
+    machine = client.get("/api/machine").json()
+    assert len(machine["states"]) == 5
+    triggers = {e["trigger"] for e in machine["feedback_edges"]}
+    assert triggers == {"rescope", "rerun", "replan"}
+
+
+def test_app_view_fragments_render(isolate_omd_data):
+    _seed_full_study(isolate_omd_data)
+    client = TestClient(app)
+
+    # shell
+    shell = client.get("/?plan_id=study-1&run_id=run-1")
+    assert shell.status_code == 200
+    assert "/static/dashboard.js" in shell.text
+    assert 'hx-get="/view/requirements/study-1"' in shell.text
+
+    # state strip: concluding (primary verified + assessment present)
+    strip = client.get("/view/state-strip/study-1")
+    assert "state-node current" in strip.text and "Concluding" in strip.text
+
+    # plan-scoped fragments
+    reqs = client.get("/view/requirements/study-1")
+    assert reqs.status_code == 200 and "R1" in reqs.text and "status-verified" in reqs.text
+
+    plan_frag = client.get("/view/plan/study-1")
+    assert 'data-cy="plan"' in plan_frag.text and "plan-graph-data" in plan_frag.text
+
+    study_frag = client.get("/view/study/wings")
+    assert 'data-cy="study"' in study_frag.text and "structural_mass" in study_frag.text
+
+    reasoning = client.get("/view/reasoning/study-1")
+    assert 'data-cy="reasoning"' in reasoning.text
+
+    report = client.get("/view/report/study-1")
+    assert report.status_code == 200 and "scorecard" in report.text
+
+    # run-scoped: results renders convergence + constraints + final value
+    results = client.get("/view/results/run-1")
+    assert results.status_code == 200
+    assert "Convergence" in results.text and "Constraints" in results.text
+    assert "950.0" in results.text
+
+    # plot galleries render (types may be empty without an artifact backend)
+    assert client.get("/view/visualization/run-1").status_code == 200
+    assert client.get("/view/plots/run-1").status_code == 200
+
+
+def test_app_plot_image_503_when_no_artifact(isolate_omd_data):
+    _seed_full_study(isolate_omd_data)
+    client = TestClient(app)
+    # No artifact exists for this run, so the adapter cannot render a PNG.
+    resp = client.get("/api/plots/run-1/planform")
+    assert resp.status_code == 503
+    assert "error" in resp.json()

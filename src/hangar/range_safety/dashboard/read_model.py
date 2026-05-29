@@ -26,6 +26,7 @@ from hangar.range_safety.dashboard import plan_diff, plot_adapter, state_machine
 from hangar.range_safety.dashboard.plan_store import (
     default_plan_store,
     latest_version,
+    list_plans,
     list_versions,
     load_plan,
 )
@@ -84,6 +85,41 @@ class ReadModel:
     def machine(self) -> dict:
         """Static machine definition (states + edges) for the shell."""
         return state_machine.describe_machine()
+
+    # -- enumeration (shell selectors) ------------------------------------
+
+    def list_plans(self) -> list[dict]:
+        """Plans available in the store, with their latest version and state.
+
+        Powers the shell's plan selector. Cheap fields only; the per-plan
+        state inference is a single DAG read each.
+        """
+        out = []
+        for plan_id in list_plans(self.plan_store):
+            plan = self._plan(plan_id)
+            dag = self._dag(plan_id)
+            out.append({
+                "plan_id": plan_id,
+                "version": latest_version(self.plan_store, plan_id),
+                "name": (plan.get("metadata") or {}).get("name"),
+                "current_state": state_machine.infer_current_state(plan, dag)["current"],
+            })
+        return out
+
+    def list_runs(self, plan_id: str) -> list[dict]:
+        """Run records recorded for a plan (newest first), for the run selector."""
+        dag = self._dag(plan_id)
+        runs = [
+            {
+                "run_id": e.get("entity_id"),
+                "version": e.get("version"),
+                "created_at": e.get("created_at"),
+            }
+            for e in (dag.get("entities") or [])
+            if e.get("entity_type") == "run_record"
+        ]
+        runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        return runs
 
     # -- view 1: requirements ---------------------------------------------
 
@@ -180,7 +216,76 @@ class ReadModel:
             "summary": plan_diff.summarize_diff(changes),
         }
 
+    # -- view 2c: study ----------------------------------------------------
+
+    def _latest_run_metrics(self, plan_id: str) -> dict:
+        """Final-case metrics of the newest run for a plan, or {}."""
+        runs = self.list_runs(plan_id)
+        if not runs:
+            return {}
+        cases = query_run_results(runs[0]["run_id"])
+        final = next((c for c in cases if c.get("case_type") == "final"), None)
+        if final is None and cases:
+            final = cases[-1]
+        data = (final or {}).get("data") or {}
+        return {k: v for k, v in data.items() if isinstance(v, (int, float))}
+
+    def view_study(self, study_id: str) -> dict:
+        """A collection of related plans (a study / trade space).
+
+        Membership (v1): plans whose ``metadata.study`` equals ``study_id``;
+        if none match, ``study_id`` is treated as a single plan and the
+        study is that plan on its own. Lineage edges come from each member's
+        ``metadata.derived_from`` (a parent plan id). Metrics are the final
+        numeric outputs of each member's newest run, so the view can render
+        a study-vs-metric matrix. This is the v1 scope; richer study
+        modeling is a later item (see DESIGN_views.md 2c).
+        """
+        all_ids = list_plans(self.plan_store)
+        members_ids = [
+            pid for pid in all_ids
+            if str((self._plan(pid).get("metadata") or {}).get("study") or "") == study_id
+        ]
+        if not members_ids and study_id in all_ids:
+            members_ids = [study_id]
+
+        members = []
+        lineage = []
+        metric_keys: set[str] = set()
+        for pid in members_ids:
+            plan = self._plan(pid)
+            meta = plan.get("metadata") or {}
+            dag = self._dag(pid)
+            metrics = self._latest_run_metrics(pid)
+            metric_keys.update(metrics)
+            members.append({
+                "plan_id": pid,
+                "version": latest_version(self.plan_store, pid),
+                "name": meta.get("name"),
+                "current_state": state_machine.infer_current_state(plan, dag)["current"],
+                "objective": (plan.get("objective") or {}).get("name"),
+                "metrics": metrics,
+            })
+            parent = meta.get("derived_from")
+            if parent:
+                lineage.append({"source": parent, "target": pid})
+
+        return {
+            "study_id": study_id,
+            "members": members,
+            "lineage": lineage,
+            "metric_keys": sorted(metric_keys),
+        }
+
     # -- view 3: results ---------------------------------------------------
+
+    def plan_for_run(self, run_id: str) -> dict | None:
+        """Load the plan a run belongs to (via the run entity's plan_id)."""
+        entity = query_entity(run_id)
+        plan_id = (entity or {}).get("plan_id")
+        if not plan_id:
+            return None
+        return self._plan(plan_id)
 
     def view_results(self, run_id: str, plan: dict | None = None) -> dict:
         cases = query_run_results(run_id)

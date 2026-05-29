@@ -32,6 +32,22 @@ def default_plan_store() -> Path:
     return Path(root) / "plans"
 
 
+def list_plans(plan_store: Path) -> list[str]:
+    """Return the sorted plan ids that have at least one stored version.
+
+    A plan id is a subdirectory of the store containing a ``vN.yaml``.
+    """
+    store = Path(plan_store)
+    if not store.is_dir():
+        return []
+    plans = [
+        entry.name
+        for entry in store.iterdir()
+        if entry.is_dir() and list_versions(store, entry.name)
+    ]
+    return sorted(plans)
+
+
 def list_versions(plan_store: Path, plan_id: str) -> list[int]:
     """Return the sorted list of version numbers stored for a plan."""
     plan_dir = Path(plan_store) / plan_id

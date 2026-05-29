@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analysis State Dashboard</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>Analysis State Dashboard</h1>
+  <label for="plan-select">Study / plan</label>
+  <select id="plan-select" onchange="location.href='/?plan_id=' + encodeURIComponent(this.value)">
+    <option value="">-- select --</option>
+    {% for p in plans %}
+    <option value="{{ p.plan_id }}" {% if p.plan_id == plan_id %}selected{% endif %}>
+      {% if p.name %}{{ p.name }} -- {% endif %}{{ p.plan_id }}{% if p.version %} (v{{ p.version }}){% endif %} [{{ state_labels.get(p.current_state, p.current_state) }}]
+    </option>
+    {% endfor %}
+  </select>
+
+  {% if plan_id %}
+  <label for="run-select">Run</label>
+  <select id="run-select"
+          onchange="location.href='/?plan_id={{ plan_id }}&run_id=' + encodeURIComponent(this.value)">
+    <option value="">-- none --</option>
+    {% for r in runs %}
+    <option value="{{ r.run_id }}" {% if r.run_id == run_id %}selected{% endif %}>{{ r.run_id }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+</div>
+
+<div id="state-strip"
+     {% if plan_id %}hx-get="/view/state-strip/{{ plan_id }}" hx-trigger="every 8s" hx-swap="innerHTML"{% endif %}>
+  {% include "_state_strip.html" %}
+</div>
+
+<div id="main">
+  <nav id="nav">
+    <div class="nav-group">Plan</div>
+    {% set plan_views = [
+        ("requirements", "Requirements"),
+        ("plan", "Plan graph"),
+        ("plan-diff", "Plan diff"),
+        ("study", "Study"),
+        ("reasoning", "Reasoning trace"),
+        ("report", "Report")] %}
+    {% for slug, label in plan_views %}
+      {% if plan_id %}
+      <a class="nav-link {% if slug == 'requirements' %}active{% endif %}"
+         hx-get="/view/{{ slug }}/{{ plan_id }}" hx-target="#view" hx-push-url="false">{{ label }}</a>
+      {% else %}
+      <a class="nav-link disabled">{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+
+    <div class="nav-group">Run</div>
+    {% set run_views = [
+        ("results", "Results"),
+        ("visualization", "Visualization"),
+        ("plots", "Opt / compare plots")] %}
+    {% for slug, label in run_views %}
+      {% if run_id %}
+      <a class="nav-link" hx-get="/view/{{ slug }}/{{ run_id }}" hx-target="#view" hx-push-url="false">{{ label }}</a>
+      {% else %}
+      <a class="nav-link disabled" title="select a run">{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+
+  <div id="view"
+       {% if plan_id %}hx-get="/view/requirements/{{ plan_id }}" hx-trigger="load" hx-swap="innerHTML"{% endif %}>
+    {% if not plan_id %}
+    <div class="empty">Select a study / plan above to begin. The five-state lifecycle and
+    its replan / rerun / rescope feedback loops are inferred from the recorded provenance.</div>
+    {% endif %}
+  </div>
+
+  <aside id="panel">
+    <div id="panel-header"><span id="panel-title">Details</span><span id="panel-close">close</span></div>
+    <div id="panel-body"></div>
+  </aside>
+</div>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

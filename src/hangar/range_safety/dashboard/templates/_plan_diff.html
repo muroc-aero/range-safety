@@ -1,0 +1,36 @@
+{# View 2b -- Plan diff (Planning / replan state).
+   Element-level field diff between two plan versions, rendered as a grouped
+   table so a replan is legible at the field level. (A Cytoscape diff overlay
+   on the plan graph is a follow-up; the field-level diff reads clearest as a
+   table.) #}
+<h2 class="view-title">Plan diff</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span> &middot;
+  v{{ data.version_a }} &rarr; v{{ data.version_b }}</p>
+
+<div class="scorecard">
+  <div class="score-tile"><div class="num" style="color:#6ade8e">{{ data.summary.added or 0 }}</div><div class="lbl">added</div></div>
+  <div class="score-tile"><div class="num" style="color:#ff8a8a">{{ data.summary.removed or 0 }}</div><div class="lbl">removed</div></div>
+  <div class="score-tile"><div class="num" style="color:#e0c040">{{ data.summary.modified or 0 }}</div><div class="lbl">modified</div></div>
+</div>
+
+{% if not data.changes %}
+<div class="empty">No differences between v{{ data.version_a }} and v{{ data.version_b }}.</div>
+{% else %}
+<table class="grid">
+  <thead><tr>
+    <th style="width:14%">Category</th><th style="width:34%">Element</th>
+    <th style="width:12%">Change</th><th style="width:20%">Old</th><th style="width:20%">New</th>
+  </tr></thead>
+  <tbody>
+  {% for c in data.changes %}
+    <tr>
+      <td class="muted">{{ c.path.split('[')[0].split('.')[0] }}</td>
+      <td><code class="path">{{ c.path }}</code></td>
+      <td><span class="chip action-{{ c.action }}">{{ c.action }}</span></td>
+      <td class="mono">{% if c.old is not none %}{{ c.old }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      <td class="mono">{% if c.new is not none %}{{ c.new }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

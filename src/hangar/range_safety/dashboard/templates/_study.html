@@ -1,0 +1,31 @@
+{# View 2c -- Study (Planning state). Graph of study members by lineage,
+   plus a study-vs-metric matrix. v1 scope. #}
+<h2 class="view-title">Study</h2>
+<p class="view-sub">Study <span class="mono">{{ data.study_id }}</span> &middot; {{ data.members | length }} member plan(s). Node color = current state.</p>
+
+{% if not data.members %}
+<div class="empty">No plans belong to this study (set <code class="path">metadata.study</code> on member plans).</div>
+{% else %}
+<div class="cy-graph" data-cy="study" data-json="study-graph-data"></div>
+<script type="application/json" id="study-graph-data">{{ {"nodes": data.members, "lineage": data.lineage} | tojson }}</script>
+
+<div class="group-label">Study matrix</div>
+<table class="grid">
+  <thead><tr>
+    <th>Plan</th><th>State</th><th>Objective</th>
+    {% for m in data.metric_keys %}<th class="mono">{{ m }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for member in data.members %}
+    <tr>
+      <td class="mono">{{ member.plan_id }}{% if member.version %} v{{ member.version }}{% endif %}</td>
+      <td>{{ member.current_state }}</td>
+      <td class="muted">{{ member.objective or "&mdash;" | safe }}</td>
+      {% for m in data.metric_keys %}
+        <td class="mono">{% if member.metrics.get(m) is not none %}{{ '%.4g'|format(member.metrics[m]) }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

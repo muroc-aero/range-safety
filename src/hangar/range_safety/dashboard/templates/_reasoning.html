@@ -1,0 +1,20 @@
+{# View 4 -- Reasoning trace (Verifying / Analyzing state).
+   Subgraph linking results -> reasoning/observations -> requirements. #}
+<h2 class="view-title">Reasoning trace</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span>
+  {% if data.focus %}&middot; focused on <span class="mono">{{ data.focus }}</span>{% endif %}
+  &middot; how results bear on requirements. Click a node to read its rationale.</p>
+
+<div class="graph-legend">
+  <span><span class="legend-dot" style="background:#5aaa5a"></span>satisfies</span>
+  <span><span class="legend-dot" style="background:#d05a5a"></span>violates</span>
+  <span><span class="legend-dot" style="background:#5a8aff"></span>verifies</span>
+  <span><span class="legend-dot" style="background:#9a6add"></span>justifies</span>
+</div>
+
+{% if not data.nodes %}
+<div class="empty">No reasoning trace recorded yet (no run / assessment / decision entities).</div>
+{% else %}
+<div class="cy-graph" data-cy="reasoning" data-json="reasoning-graph-data"></div>
+<script type="application/json" id="reasoning-graph-data">{{ {"nodes": data.nodes, "edges": data.edges} | tojson }}</script>
+{% endif %}

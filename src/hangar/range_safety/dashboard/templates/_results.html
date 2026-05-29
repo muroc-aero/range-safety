@@ -1,0 +1,39 @@
+{# View 3a -- Results (Executing state) #}
+<h2 class="view-title">Results</h2>
+<p class="view-sub">Run <span class="mono">{{ data.run_id }}</span> &middot; {{ data.history | length }} recorded case(s).</p>
+
+{% macro check_strip(result, title) %}
+  {% if result %}
+  <div class="card">
+    <h3>{{ title }}
+      <span class="chip status-{{ 'verified' if result.passed else 'violated' }}">{{ 'pass' if result.passed else 'fail' }}</span>
+    </h3>
+    <div class="muted" style="margin-bottom:6px">{{ result.summary }}</div>
+    {% for c in result.checks %}
+      <div style="font-size:11px">
+        <span class="chip status-{{ 'verified' if c.passed else 'violated' }}">{{ c.name }}</span>
+        <span class="muted">{{ c.message }}</span>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% set v = data.validation or {} %}
+{{ check_strip(v.convergence, "Convergence") }}
+{{ check_strip(v.constraints, "Constraints") }}
+{% if v.error %}<div class="card"><span class="plot-error">Validation unavailable: {{ v.error }}</span></div>{% endif %}
+
+<div class="group-label">Final values</div>
+{% if data.final %}
+<table class="grid">
+  <thead><tr><th style="width:40%">Variable</th><th>Value</th></tr></thead>
+  <tbody>
+  {% for k, val in data.final.items() %}
+    <tr><td class="mono">{{ k }}</td><td class="mono">{{ val }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No final case recorded for this run.</div>
+{% endif %}

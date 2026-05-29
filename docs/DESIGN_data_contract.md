@@ -42,6 +42,17 @@ view_reasoning(plan_id, version=None, focus=None) -> {nodes, edges}
 view_report(plan_id, version=None) -> {scorecard, phases, key_results, narrative}
 ```
 
+## Multi-source read model (Phase 2.5)
+
+The read model is being generalized behind a `Source` adapter so it renders
+the five states for any tool, not just omd. Each Source maps one provenance
+pattern into the view methods above and the normalized `GraphElements` /
+`StateCoverage` contracts. `OmdSource` (plan-centric) is today's behavior;
+`SdkSessionSource` (session-centric, for oas/ocp/pyc) reads `sessions.db`
+(`get_session_graph`) + the ArtifactStore. New tools join by the pattern
+they fit, or by adding one Source. The full design, per-state mapping, and
+the graph-builder decision live in `DESIGN_tool_integration.md`.
+
 ## Contracts consumed from the-hangar
 
 ### Results-reader seam (provenance / run data)

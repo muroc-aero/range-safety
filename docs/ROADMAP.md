@@ -95,6 +95,38 @@ Goal: the six views, each backed by a read-model method. See
 - [ ] Report / summary dashboard (Concluding).
 - [ ] Top-level dashboard: current state, history, planned next step.
 
+## Phase 2.5 -- Multi-source consolidation (next)
+
+Goal: the dashboard renders the five states for any tool, not just omd, by
+reading both provenance patterns through Source adapters and a normalized
+contract. The dashboard becomes a faithful superset of the existing tool
+viewers, with drill-down. See `DESIGN_tool_integration.md` for the full
+design and the TODO backlog; this is the scheduled order.
+
+- [ ] **Source adapter seam.** Refactor the read model behind a `Source`
+      interface; `OmdSource` wraps today's behavior. Study key `{source}:{id}`;
+      shell selector aggregates all sources.
+- [ ] **Shared graph builder (the-hangar).** Extract
+      `build_provenance_elements` (omd) and add `build_session_elements`
+      (sdk), both returning the normalized `GraphElements`. Two small
+      the-hangar PRs. Migrate the existing HTML viewers to call them.
+- [ ] **`SdkSessionSource`.** Read `sessions.db` (`get_session_graph`) +
+      ArtifactStore; map session graph, `set_requirements`, `log_decision`,
+      results and plots into the state views so oas/ocp/pyc sessions replay.
+- [ ] **Plot dispatch by origin.** omd runs ->
+      `hangar.omd.plotting.generate_plots`; sdk runs ->
+      `hangar.sdk.viz.generate_plot_png`. (Today the dashboard only does the
+      latter, so omd runs show no plots; this closes that gap.)
+- [ ] **StateCoverage + thin/absent badges** in the state strip.
+- [ ] **Enhance the omd results view** (currently thin).
+- [ ] **Replay tests.** Run the same fixtures as omd's `test_eval_*`
+      (paraboloid, oas-aero, ...) and the three-lane example/demo plans
+      through omd, then assert the dashboard read model + routes render each
+      state. Add an sdk-session fixture for the sdk path.
+- [ ] **Skills follow-up.** File TODOs on each tool's skill to record the
+      pieces that leave states thin (requirements at gather, decisions at
+      verify), so real agentic runs populate the dashboard.
+
 ## Phase 3 -- Deploy
 
 - [ ] Dockerfile that installs the workspace with the submodule resolved

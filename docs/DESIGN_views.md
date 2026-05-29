@@ -13,6 +13,14 @@ Common shape for every view:
 - htmx swaps the fragment into the dashboard shell; Cytoscape views
   receive their graph JSON from the `/api/<name>` endpoint.
 
+> Multi-source note (Phase 2.5): the views are tool-agnostic. The data
+> behind each view comes from a per-tool Source adapter (omd plan-centric,
+> sdk session-centric for oas/ocp/pyc), and graph views render a normalized
+> `GraphElements` shape produced by a shared element-builder, so the same
+> view works regardless of which tool produced the data. Where a tool has
+> no data for a state, the view renders thin/absent with a TODO badge. See
+> `DESIGN_tool_integration.md`. Status today: only the omd Source is wired.
+
 > Roadmap note (next version): the graph views below (plan-diff, study,
 > reasoning-trace) are read-only and laid out with Cytoscape in this
 > version. Direct editing (drag nodes, rewire edges, edit-in-place with
@@ -113,6 +121,11 @@ CD / L/D / failure / TSFC depending on tool), a final-values table, a
 constraint-satisfaction strip (fed by `assert_constraints`), and a
 convergence summary (fed by `assert_convergence`).
 
+> TODO (Phase 2.5): the current results view is thin (final-values table +
+> validation strips only). Enhance with per-tool headline metrics,
+> optimization objective/DV histories, and a clearer constraint strip. The
+> omd `summary` command and the sdk artifact summary are prior art to reuse.
+
 ## 3b. Visualization view (Executing)
 
 Purpose: domain visualizations of the run (planform, mesh, lift
@@ -123,6 +136,13 @@ Data / rendering: served through the plot adapter
 the plot registry (`plot_types` for the run's analysis type). Images are
 fetched per type and cached client-side by content hash, matching the
 existing viewer pattern.
+
+> TODO (Phase 2.5): the plot adapter must dispatch by run origin. sdk runs
+> (oas/ocp/pyc MCP) render via `hangar.sdk.viz.generate_plot_png`
+> (ArtifactStore). omd runs render via
+> `hangar.omd.plotting.generate_plots` (recorder `.sql`, factory-aware plot
+> types) and are NOT covered by the ArtifactStore path, so omd runs show no
+> plots today. Detect which store owns the run and route accordingly.
 
 ## 3c. Plots view (Executing)
 

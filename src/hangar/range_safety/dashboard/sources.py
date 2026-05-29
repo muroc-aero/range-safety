@@ -143,17 +143,28 @@ class SdkSessionSource:
 
     # -- enumeration -------------------------------------------------------
 
+    @staticmethod
+    def _state_from_counts(n_tool: int, n_dec: int) -> str:
+        if n_dec > 0:
+            return state_machine.VERIFYING
+        if n_tool > 0:
+            return state_machine.EXECUTING
+        return state_machine.PLANNING
+
     def list_studies(self) -> list[dict]:
-        sessions = self._sdb.list_sessions()
+        # Cheap: list_sessions already returns per-session tool_call /
+        # decision counts, so the selector state needs no per-session graph
+        # build or artifact scan (those would be O(sessions) filesystem hits).
         out = []
-        for s in sessions:
+        for s in self._sdb.list_sessions():
             sid = s.get("session_id")
             out.append({
                 "key": f"{self.name}:{sid}",
                 "study_id": sid,
                 "label": s.get("project") or sid,
                 "version": None,
-                "current_state": self._infer(sid)["current"],
+                "current_state": self._state_from_counts(
+                    s.get("tool_call_count", 0), s.get("decision_count", 0)),
                 "source": self.name,
             })
         return out

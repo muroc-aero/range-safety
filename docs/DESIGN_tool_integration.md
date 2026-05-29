@@ -153,10 +153,13 @@ this version).
       graph, requirements, decisions, results, plots into the state views.
 - [ ] Shared graph element-builder in the-hangar (omd + sdk), one Cytoscape
       renderer in the dashboard; migrate existing viewers to it.
-- [ ] Plot dispatch by run origin: omd runs via
+- [x] Plot dispatch by run origin: omd runs via
       `hangar.omd.plotting.generate_plots` (recorder `.sql`, factory plot
-      types); sdk runs via `hangar.sdk.viz.generate_plot_png` (ArtifactStore).
-- [ ] `StateCoverage` contract + thin/absent badges in the state strip.
+      types, n2 excluded); sdk runs via `hangar.sdk.viz.generate_plot_png`
+      (ArtifactStore). Each Source owns its plot path; the dashboard shows
+      one gallery of all of a run's types.
+- [ ] `StateCoverage` contract + thin/absent badges in the state strip
+      (sources already return thin views; the badge layer is still TODO).
 - [ ] Enhance the omd results view (current one is thin: add the per-tool
       headline metrics, optimization histories, constraint strip).
 - [ ] Fill the sdk-pattern thin states: structured Plan extraction from a

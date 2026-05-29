@@ -63,8 +63,7 @@
     <div class="nav-group">Run</div>
     {% set run_views = [
         ("results", "Results"),
-        ("visualization", "Visualization"),
-        ("plots", "Opt / compare plots")] %}
+        ("plots", "Plots & visualization")] %}
     {% for slug, label in run_views %}
       {% if run_id %}
       <a class="nav-link" hx-get="/view/{{ slug }}/{{ run_id }}" hx-target="#view" hx-push-url="false">{{ label }}</a>

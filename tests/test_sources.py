@@ -136,3 +136,59 @@ def test_multisource_dispatches_by_prefix(isolate_omd_data):
     assert sdk_runs and sdk_runs[0]["run_id"].startswith("sdk:")
     res = ms.view_results(sdk_runs[0]["run_id"])
     assert res["final"] and res["run_id"].startswith("sdk:")
+
+
+# ---------------------------------------------------------------------------
+# End-to-end replay: a real omd optimization rendered through the dashboard
+# (mirrors omd's own e2e eval, at the paraboloid's low cost).
+# ---------------------------------------------------------------------------
+
+
+def test_replay_omd_optimization_e2e(isolate_omd_data):
+    from hangar.omd.run import run_plan
+
+    tmp = isolate_omd_data
+    plan = {
+        "metadata": {"id": "parab", "name": "Paraboloid", "version": 1},
+        "operating_points": {"x": 0.0, "y": 0.0},
+        "components": [{"id": "paraboloid", "type": "paraboloid/Paraboloid", "config": {}}],
+        "design_variables": [
+            {"name": "x", "lower": -50.0, "upper": 50.0},
+            {"name": "y", "lower": -50.0, "upper": 50.0},
+        ],
+        "objective": {"name": "paraboloid.f_xy"},
+        "optimizer": {"type": "SLSQP", "options": {"maxiter": 50}},
+        "requirements": [{"id": "R1", "text": "reach optimum", "priority": "primary",
+                          "status": "open"}],
+    }
+    plan_path = tmp / "plan.yaml"
+    plan_path.write_text(yaml.safe_dump(plan))
+    result = run_plan(plan_path, mode="optimize", recording_level="driver",
+                      db_path=tmp / "analysis.db")
+    assert result["status"] in ("converged", "completed")
+    run_id = result["run_id"]
+
+    ms = MultiSource()
+
+    # The omd study is listed and its state is inferred from real provenance.
+    assert "omd:parab" in {s["key"] for s in ms.list_studies()}
+    state = ms.get_state("omd:parab")
+    assert state["current"] in (state_machine.EXECUTING, state_machine.VERIFYING,
+                                state_machine.CONCLUDING)
+
+    # The plan graph is the rich omd provenance DAG (decomposed entities).
+    graph = ms.view_plan("omd:parab")["graph"]
+    kinds = {n["data"]["kind"] for n in graph["nodes"]}
+    assert "plan" in kinds and "run_record" in kinds
+
+    # Results read the real final objective.
+    runs = ms.list_runs("omd:parab")
+    assert runs and runs[0]["run_id"] == f"omd:{run_id}"
+    results = ms.view_results(f"omd:{run_id}")
+    assert results["final"]["paraboloid.f_xy"] < -27.0  # analytic optimum is -82/3
+
+    # Plots render through the omd recorder path (factory-aware), PNG bytes.
+    types = ms.plot_types(f"omd:{run_id}")
+    assert "convergence" in types and "n2" not in types
+    png = ms.plot_png(f"omd:{run_id}", "convergence")
+    assert png[:4] == b"\x89PNG"

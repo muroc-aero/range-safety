@@ -34,13 +34,6 @@ from hangar.range_safety.dashboard.sources import MultiSource
 _HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
 
-# Plot types that belong to the optimization / comparison gallery; the rest
-# are domain visualizations. Used to split views 3b and 3c.
-_OPT_PLOT_TYPES = frozenset({
-    "opt_history", "opt_dv_evolution", "opt_comparison",
-    "opt_multipoint", "multipoint_comparison",
-})
-
 
 def _read_model() -> MultiSource:
     # Aggregates the omd + sdk sources; dispatches by {source}:{id} key.
@@ -198,23 +191,21 @@ async def view_results(request):
         "data": rm.view_results(request.path_params["run_id"])})
 
 
-async def view_visualization(request):
-    rm = _read_model()
-    run_id = request.path_params["run_id"]
-    types = [t for t in rm.plot_types(run_id) if t not in _OPT_PLOT_TYPES]
-    return templates.TemplateResponse(request, "_plot_gallery.html", {
-        "title": "Visualization", "subtitle": "domain plots (planform, lift, mesh, stress)",
-        "run_id": run_id, "plot_types": types})
-
-
 async def view_plots(request):
+    # One gallery listing every plot type the owning source offers for the
+    # run (omd factory plots from the recorder, or sdk ArtifactStore plots).
+    # Splitting "visualization" vs "optimization" plots was tool-specific;
+    # the source decides what is available.
     rm = _read_model()
     run_id = request.path_params["run_id"]
-    types = [t for t in rm.plot_types(run_id) if t in _OPT_PLOT_TYPES]
     return templates.TemplateResponse(request, "_plot_gallery.html", {
-        "title": "Optimization / comparison plots",
-        "subtitle": "objective convergence, DV evolution, before / after",
-        "run_id": run_id, "plot_types": types})
+        "title": "Plots & visualization",
+        "subtitle": "domain and optimization plots rendered for this run",
+        "run_id": run_id, "plot_types": rm.plot_types(run_id)})
+
+
+# Back-compat alias; the nav now has a single Plots entry.
+view_visualization = view_plots
 
 
 routes = [

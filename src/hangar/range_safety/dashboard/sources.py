@@ -17,6 +17,8 @@ study/run key. An unprefixed id defaults to omd (back-compat).
 
 from __future__ import annotations
 
+import json
+from pathlib import Path as _Path
 from typing import Any
 
 from hangar.range_safety.dashboard import plot_adapter, state_machine
@@ -44,6 +46,66 @@ class OmdSource(ReadModel):
         if plan is None:
             plan = self.plan_for_run(run_id)
         return super().view_results(run_id, plan=plan)
+
+    # -- plots: omd renders from the recorder .sql (factory-aware), a
+    # different path from the sdk ArtifactStore. -------------------------
+
+    def _run_plot_meta(self, run_id: str) -> dict:
+        from hangar.results_reader import query_entity  # noqa: PLC0415
+
+        entity = query_entity(run_id) or {}
+        raw = entity.get("metadata")
+        if isinstance(raw, str) and raw:
+            try:
+                return json.loads(raw)
+            except (ValueError, TypeError):
+                return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def plot_types(self, run_id: str) -> list[str]:
+        from hangar.omd.registry import (  # noqa: PLC0415
+            get_all_plot_providers, get_plot_provider, get_plot_provider_with_slots,
+        )
+
+        meta = self._run_plot_meta(run_id)
+        component_types = meta.get("component_types")
+        if component_types and len(component_types) > 1:
+            names: set[str] = set()
+            for ctype in component_types.values():
+                names |= set(get_plot_provider(ctype))
+            return sorted(names)
+        ct = meta.get("component_type")
+        if ct:
+            provider = get_plot_provider_with_slots(ct, meta.get("slot_providers"))
+        else:
+            provider = get_all_plot_providers()
+        # n2 is an interactive HTML diagram, not a PNG; the image gallery
+        # only serves rasterized plots.
+        return sorted(name for name in provider if name != "n2")
+
+    def plot_png(self, run_id: str, plot_type: str) -> bytes:
+        from hangar.omd.db import omd_data_root, recordings_dir  # noqa: PLC0415
+        from hangar.omd.plotting import generate_plots  # noqa: PLC0415
+
+        rec_path = recordings_dir() / f"{run_id}.sql"
+        if not rec_path.exists():
+            raise plot_adapter.PlotUnavailable(f"No recorder for run {run_id!r}.")
+        meta = self._run_plot_meta(run_id)
+        out_dir = omd_data_root() / "plots" / run_id
+        saved = generate_plots(
+            rec_path,
+            plot_types=[plot_type],
+            output_dir=out_dir,
+            component_type=meta.get("component_type"),
+            component_types=meta.get("component_types"),
+            slot_providers=meta.get("slot_providers"),
+        )
+        path = saved.get(plot_type) if saved else None
+        if not path or not _Path(path).exists():
+            raise plot_adapter.PlotUnavailable(
+                f"omd produced no {plot_type!r} plot for run {run_id!r}."
+            )
+        return _Path(path).read_bytes()
 
     def list_studies(self) -> list[dict]:
         out = []

@@ -78,6 +78,7 @@
   // -- cytoscape graph builders --------------------------------------------
   function buildElements(kind, data) {
     var els = [];
+    var ids = {};
     (data.nodes || []).forEach(function (n) {
       var label, color;
       if (kind === "study") {
@@ -87,6 +88,7 @@
         label = n.label || n.id;
         color = colorForEntity(n.entity_type);
       }
+      ids[n.id] = true;
       els.push({
         group: "nodes",
         data: Object.assign({}, n, { id: n.id, _label: label, _color: color })
@@ -94,7 +96,8 @@
     });
     (data.edges || data.lineage || []).forEach(function (e, i) {
       var src = e.source, tgt = e.target;
-      if (src == null || tgt == null) return;
+      // skip dangling edges (endpoint not in the node set)
+      if (src == null || tgt == null || !ids[src] || !ids[tgt]) return;
       els.push({
         group: "edges",
         data: {

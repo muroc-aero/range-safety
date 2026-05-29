@@ -348,7 +348,11 @@ class ReadModel:
                     "entity_type": ent.get("entity_type"),
                     "metadata": _parse_metadata(ent),
                 })
+        node_ids = {n["id"] for n in nodes}
         reasoning_relations = _VERIFY_RELATIONS | {"justifies", "wasDerivedFrom"}
+        # Only keep edges that connect two reasoning nodes; plan-lineage
+        # wasDerivedFrom edges into decomposed plan sub-entities are not part
+        # of the reasoning trace (and would dangle in the graph).
         edges = [
             {
                 "relation": e.get("relation"),
@@ -357,6 +361,8 @@ class ReadModel:
             }
             for e in dag.get("edges") or []
             if e.get("relation") in reasoning_relations
+            and e.get("subject_id") in node_ids
+            and e.get("object_id") in node_ids
         ]
 
         if focus is not None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from hangar.omd.db import init_analysis_db, query_run_results
+from hangar.results_reader import init_analysis_db, query_run_results
 
 
 def _check(name: str, passed: bool, message: str) -> dict:

@@ -107,18 +107,45 @@ class OmdSource(ReadModel):
             )
         return _Path(path).read_bytes()
 
+    @staticmethod
+    def _cheap_state(types: set) -> str:
+        # Rough state for the selector from entity-type presence alone (no
+        # plan YAML read, no per-plan DAG). The selected study still gets the
+        # full inference via get_state.
+        if "assessment" in types:
+            return state_machine.VERIFYING
+        if "run_record" in types:
+            return state_machine.EXECUTING
+        return state_machine.PLANNING
+
     def list_studies(self) -> list[dict]:
-        out = []
-        for p in self.list_plans():
-            out.append({
-                "key": f"{self.name}:{p['plan_id']}",
-                "study_id": p["plan_id"],
-                "label": p.get("name") or p["plan_id"],
-                "version": p.get("version"),
-                "current_state": p.get("current_state"),
+        # One bulk query over the entities table (O(1) DB round-trips) instead
+        # of per-plan _plan() + _dag() + inference, which is O(plans) and was
+        # ~18s with 1500+ plans.
+        from hangar.results_reader.db import _get_conn  # noqa: PLC0415
+
+        rows = _get_conn().execute(
+            "SELECT plan_id, entity_type, version FROM entities WHERE plan_id IS NOT NULL"
+        ).fetchall()
+        types_by_plan: dict[str, set] = {}
+        version_by_plan: dict[str, int] = {}
+        for r in rows:
+            pid = r["plan_id"]
+            types_by_plan.setdefault(pid, set()).add(r["entity_type"])
+            if r["entity_type"] == "plan" and r["version"] is not None:
+                version_by_plan[pid] = max(version_by_plan.get(pid, 0), r["version"])
+
+        return [
+            {
+                "key": f"{self.name}:{pid}",
+                "study_id": pid,
+                "label": pid,
+                "version": version_by_plan.get(pid),
+                "current_state": self._cheap_state(types_by_plan[pid]),
                 "source": self.name,
-            })
-        return out
+            }
+            for pid in sorted(types_by_plan)
+        ]
 
 
 class SdkSessionSource:

@@ -15,9 +15,12 @@
     cytoscape.use(window.cytoscapeDagre);
   }
 
+  // Round-rectangle nodes with explicit sizes, mirroring the omd viewer
+  // (default node shape is an ellipse, which is why the graph looked wrong).
   var BASE_NODE = {
-    label: "data(label)", "text-wrap": "wrap", "text-max-width": "130px",
-    "font-size": 10, "text-valign": "center", "text-halign": "center",
+    shape: "round-rectangle", width: 110, height: 32,
+    label: "data(label)", "text-wrap": "wrap", "text-max-width": "100px",
+    "font-size": 9, "text-valign": "center", "text-halign": "center",
     "border-width": 2, color: "#cfe0ff",
   };
 
@@ -29,25 +32,25 @@
   }
   var PROVENANCE_STYLE = [
     {selector: 'node', style: kindStyle("#111828", "#3a4a6a")},
-    {selector: 'node[kind="plan"]', style: kindStyle("#0d1f3c", "#4a9eff", {color: "#a0ccff"})},
-    {selector: 'node[kind="run_record"]', style: kindStyle("#0a1e2e", "#3ac8fa", {color: "#80d8ff"})},
-    {selector: 'node[kind="assessment"]', style: kindStyle("#0a2a20", "#2ad0a0", {color: "#70e8c0"})},
-    {selector: 'node[kind="surface_def"]', style: kindStyle("#0a1828", "#70b8ff", {"font-size": 9})},
-    {selector: 'node[kind="operating_point"]', style: kindStyle("#0a1820", "#50c0f0", {"font-size": 9})},
-    {selector: 'node[kind="solver_config"]', style: kindStyle("#101820", "#5080a0", {"font-size": 9})},
-    {selector: 'node[kind="opt_setup"]', style: kindStyle("#0a1820", "#40d0e0", {"font-size": 9})},
-    {selector: 'node[kind="aero_results"]', style: kindStyle("#0a2018", "#30c090", {"font-size": 9})},
-    {selector: 'node[kind="struct_results"]', style: kindStyle("#0a1820", "#40a0b0", {"font-size": 9})},
-    {selector: 'node[kind="convergence_info"]', style: kindStyle("#101820", "#6080a0", {"font-size": 9})},
-    {selector: 'node[kind="model_structure"]', style: kindStyle("#101420", "#5070a0", {"font-size": 9})},
-    {selector: 'node[kind="phase"]', style: kindStyle("#140a2a", "#a080e0")},
-    {selector: 'node[kind="requirement"]', style: kindStyle("#0a1a2e", "#80a8e0", {color: "#a8c8ff"})},
+    {selector: 'node[kind="plan"]', style: kindStyle("#0d1f3c", "#4a9eff", {color: "#a0ccff", width: 140, height: 40, "font-size": 10, "text-max-width": "130px"})},
+    {selector: 'node[kind="run_record"]', style: kindStyle("#0a1e2e", "#3ac8fa", {color: "#80d8ff", width: 140, height: 40, "font-size": 10, "text-max-width": "130px"})},
+    {selector: 'node[kind="assessment"]', style: kindStyle("#0a2a20", "#2ad0a0", {color: "#70e8c0", width: 120, height: 36, "font-size": 10, "text-max-width": "110px"})},
+    {selector: 'node[kind="surface_def"]', style: kindStyle("#0a1828", "#70b8ff", {width: 120, height: 32, "text-max-width": "110px"})},
+    {selector: 'node[kind="operating_point"]', style: kindStyle("#0a1820", "#50c0f0", {width: 100, height: 30, "text-max-width": "90px"})},
+    {selector: 'node[kind="solver_config"]', style: kindStyle("#101820", "#5080a0", {width: 100, height: 30, "text-max-width": "90px"})},
+    {selector: 'node[kind="opt_setup"]', style: kindStyle("#0a1820", "#40d0e0", {width: 120, height: 32, "text-max-width": "110px"})},
+    {selector: 'node[kind="aero_results"]', style: kindStyle("#0a2018", "#30c090", {width: 100, height: 32})},
+    {selector: 'node[kind="struct_results"]', style: kindStyle("#0a1820", "#40a0b0", {width: 110, height: 32})},
+    {selector: 'node[kind="convergence_info"]', style: kindStyle("#101820", "#6080a0", {width: 110, height: 32})},
+    {selector: 'node[kind="model_structure"]', style: kindStyle("#101420", "#5070a0", {width: 110, height: 32})},
+    {selector: 'node[kind="phase"]', style: kindStyle("#140a2a", "#a080e0", {width: 120, height: 34})},
+    {selector: 'node[kind="requirement"]', style: kindStyle("#0a1a2e", "#80a8e0", {color: "#a8c8ff", width: 120, height: 36, "text-max-width": "110px"})},
     {selector: 'node[kind="requirement"][status="verified"]', style: {"border-color": "#40d080", "border-width": 3}},
     {selector: 'node[kind="requirement"][status="violated"]', style: {"border-color": "#e05050", "border-width": 3}},
     {selector: 'node[kind="requirement"][status="waived"]', style: {"border-color": "#808080", "border-style": "dashed"}},
-    {selector: 'node[kind="decision"]', style: kindStyle("#2a2010", "#e0b040", {color: "#f0d080", "font-size": 11, "text-max-width": "220px", padding: "8px"})},
-    {selector: 'node[kind="tool_call"]', style: kindStyle("#10283a", "#4a9eda", {shape: "round-rectangle", width: 130, height: 36, color: "#cfe8ff"})},
-    {selector: 'node[kind="activity"]', style: kindStyle("#0e1a2e", "#5a8abf")},
+    {selector: 'node[kind="decision"]', style: kindStyle("#2a2010", "#e0b040", {color: "#f0d080", "font-size": 11, width: 240, height: 90, "text-max-width": "220px", padding: "8px"})},
+    {selector: 'node[kind="tool_call"]', style: kindStyle("#10283a", "#4a9eda", {width: 130, height: 36, "font-size": 10, color: "#cfe8ff"})},
+    {selector: 'node[kind="activity"]', style: kindStyle("#0e1a2e", "#5a8abf", {width: 120, height: 34})},
     {selector: 'node[status="failed"]', style: {"border-width": 3, "border-color": "#ff4a4a", "background-color": "#2a0a0a"}},
     {selector: 'node:selected', style: {"border-width": 3, "border-color": "#9ab0ff"}},
     {selector: 'edge', style: {

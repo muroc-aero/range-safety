@@ -37,7 +37,7 @@
 </div>
 
 <div id="state-strip"
-     {% if plan_id %}hx-get="/view/state-strip/{{ plan_id }}" hx-trigger="every 8s" hx-swap="innerHTML"{% endif %}>
+     {% if plan_id %}hx-get="/view/state-strip/{{ plan_id }}{% if run_id %}?run_id={{ run_id }}{% endif %}" hx-trigger="every 8s" hx-swap="innerHTML"{% endif %}>
   {% include "_state_strip.html" %}
 </div>
 

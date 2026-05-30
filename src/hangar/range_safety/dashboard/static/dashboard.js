@@ -240,10 +240,7 @@
   // -- hydration scan ------------------------------------------------------
   function hydrate(root) {
     bindPanelClose();
-    var panel = document.getElementById("panel");
-    var graphs = root.querySelectorAll("[data-cy]");
-    if (panel && !graphs.length) panel.classList.remove("open");
-    graphs.forEach(function (c) {
+    root.querySelectorAll("[data-cy]").forEach(function (c) {
       var mode = c.getAttribute("data-cy");
       var jsonEl = document.getElementById(c.getAttribute("data-json"));
       var graph = jsonEl ? JSON.parse(jsonEl.textContent) : {nodes: [], edges: []};
@@ -265,7 +262,14 @@
   }
 
   document.body.addEventListener("htmx:afterSwap", function (evt) {
-    hydrate(evt.detail.target);
+    var target = evt.detail.target;
+    hydrate(target);
+    // Close the node inspector only when a main view (without a graph) loads;
+    // not on the periodic state-strip poll, which would otherwise dismiss it.
+    if (target && target.id === "view") {
+      var panel = document.getElementById("panel");
+      if (panel && !target.querySelector("[data-cy]")) panel.classList.remove("open");
+    }
   });
   document.addEventListener("DOMContentLoaded", function () {
     bindNav();

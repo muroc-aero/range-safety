@@ -145,6 +145,8 @@ async def view_state_strip(request):
         "machine": rm.machine(),
         "state": rm.get_state(plan_id),
         "state_labels": state_machine.STATE_LABELS,
+        "plan_id": plan_id,
+        "run_id": request.query_params.get("run_id") or None,
     })
 
 

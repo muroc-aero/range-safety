@@ -58,7 +58,10 @@ a:hover { text-decoration: underline; }
   color: #c0c8e8;
   font-size: 12px;
   white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
 }
+.state-node:hover { background: #252839; text-decoration: none; }
 .state-node.current {
   background: #2a4a7f;
   border-color: #5a8aff;

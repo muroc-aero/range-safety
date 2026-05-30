@@ -45,7 +45,18 @@ class OmdSource(ReadModel):
         # the dispatch uniform with the sdk source (single-arg view_results).
         if plan is None:
             plan = self.plan_for_run(run_id)
-        return super().view_results(run_id, plan=plan)
+        data = super().view_results(run_id, plan=plan)
+        # Attach the provenance / execution graph for the run's plan. This is
+        # the lineage DAG (build_provenance_elements); it is intentionally the
+        # "needs enhancement" results graph for now, shown alongside the table.
+        from hangar.omd.provenance import build_provenance_elements  # noqa: PLC0415
+        from hangar.results_reader import query_entity  # noqa: PLC0415
+
+        plan_id = (query_entity(run_id) or {}).get("plan_id")
+        if plan_id:
+            data["graph"] = build_provenance_elements(plan_id, db_path=self.db_path)
+            data["graph_style"] = "provenance"
+        return data
 
     # -- plots: omd renders from the recorder .sql (factory-aware), a
     # different path from the sdk ArtifactStore. -------------------------
@@ -298,13 +309,19 @@ class SdkSessionSource:
         artifact = self._store.get(run_id) or {}
         results = artifact.get("results") or {}
         final = {k: v for k, v in results.items() if isinstance(v, (int, float, str, bool))}
-        return {
+        data = {
             "run_id": run_id,
             "run_entity": artifact.get("metadata"),
             "final": final or None,
             "history": [],
             "validation": {},  # sdk validation envelope differs; TODO normalize
         }
+        # Execution graph: the run's session tool_call/decision graph.
+        session_id = (artifact.get("metadata") or {}).get("session_id")
+        if session_id:
+            data["graph"] = self._sdb.build_session_elements(session_id)
+            data["graph_style"] = "session"
+        return data
 
     def plot_types(self, run_id: str) -> list[str]:
         return plot_adapter.plot_types(run_id)

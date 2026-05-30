@@ -24,6 +24,14 @@
 {{ check_strip(v.constraints, "Constraints") }}
 {% if v.error %}<div class="card"><span class="plot-error">Validation unavailable: {{ v.error }}</span></div>{% endif %}
 
+{% if data.graph and data.graph.nodes %}
+<div class="group-label">Execution graph
+  <span class="muted" style="text-transform:none;font-weight:400">&middot; provenance / lineage (enhancement planned)</span>
+</div>
+<div class="cy-graph" style="height:420px" data-cy="{{ data.graph_style or 'provenance' }}" data-json="results-graph-data"></div>
+<script type="application/json" id="results-graph-data">{{ data.graph | tojson }}</script>
+{% endif %}
+
 <div class="group-label">Final values</div>
 {% if data.final %}
 <table class="grid">

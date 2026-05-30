@@ -1,12 +1,23 @@
-{# State-machine strip: forward progression with the current state lit,
-   the three feedback loops, and the next-step indicator. Polled. #}
+{# State-machine strip. The lit node is the study's INFERRED current
+   lifecycle state (from recorded provenance), independent of the view you
+   are looking at. Each state is also a link that loads that state's view
+   (per DESIGN_views: "clicking a state loads that state's view"). #}
+{% set targets = {
+    "gather_requirements": "/view/requirements/" ~ plan_id,
+    "planning": "/view/plan/" ~ plan_id,
+    "executing": ("/view/results/" ~ run_id) if run_id else ("/view/plan/" ~ plan_id),
+    "verifying": "/view/reasoning/" ~ plan_id,
+    "concluding": "/view/report/" ~ plan_id,
+} %}
 {% for s in machine.states %}
-  <div class="state-node {% if state and s.id == state.current %}current{% endif %}">{{ s.label }}</div>
+  <a class="state-node {% if state and s.id == state.current %}current{% endif %}"
+     hx-get="{{ targets[s.id] }}" hx-target="#view" hx-push-url="false"
+     title="Load the {{ s.label }} view">{{ s.label }}</a>
   {% if not loop.last %}<span class="state-arrow">&rarr;</span>{% endif %}
 {% endfor %}
 
 {% if state %}
-<span class="confidence">confidence {{ '%.0f'|format(state.confidence * 100) }}%</span>
+<span class="confidence" title="Inferred lifecycle state of the study from its recorded runs / assessments / decisions">current: {{ state_labels.get(state.current, state.current) }} ({{ '%.0f'|format(state.confidence * 100) }}%)</span>
 {% if state.next and state.next.forward_state %}
 <span class="next-indicator">next &rarr; {{ state_labels.get(state.next.forward_state, state.next.forward_state) }}</span>
 {% endif %}

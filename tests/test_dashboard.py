@@ -362,7 +362,7 @@ def test_app_view_fragments_render(isolate_omd_data):
     assert reqs.status_code == 200 and "R1" in reqs.text and "status-verified" in reqs.text
 
     plan_frag = client.get("/view/plan/study-1")
-    assert 'data-cy="provenance"' in plan_frag.text and "plan-graph-data" in plan_frag.text
+    assert 'data-cy="plan_detail"' in plan_frag.text and "plan-graph-data" in plan_frag.text
 
     study_frag = client.get("/view/study/wings")
     assert 'data-cy="study"' in study_frag.text and "structural_mass" in study_frag.text

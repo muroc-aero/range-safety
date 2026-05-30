@@ -175,19 +175,43 @@ class ReadModel:
 
     def view_plan(self, plan_id: str, version: int | None = None) -> dict:
         plan = self._plan(plan_id, version)
-        # The plan graph is the omd provenance DAG, built by the shared
-        # element-builder so it matches the omd viewer exactly (decision
-        # boxes, partOf containment, status colors, reversed PROV edges).
-        # Imported lazily so an sdk-only deployment does not require omd.
-        from hangar.omd.provenance import build_provenance_elements  # noqa: PLC0415
+        resolved = version if version is not None else latest_version(self.plan_store, plan_id)
+        # The Planning view is the omd PLAN DETAIL graph (the plan/problem
+        # structure: components, surfaces, solvers, DVs, constraints,
+        # objective, decisions), built by the shared omd plan-graph builder so
+        # it matches the omd /omd-plan-detail viewer. This is distinct from the
+        # provenance/execution DAG. Imported lazily (sdk-only deploys do not
+        # need omd); build_plan_graph is dependency-free.
+        from hangar.omd.plan_graph import build_plan_graph  # noqa: PLC0415
 
-        elements = build_provenance_elements(plan_id, db_path=self.db_path)
+        kg = build_plan_graph(plan, plan_id, resolved or 0)
+        nodes = [
+            {"data": {
+                "id": n["id"],
+                "label": n["label"],
+                "node_type": n["type"],
+                "kind": n["type"],
+                "properties": n.get("properties", {}),
+            }}
+            for n in kg.get("nodes", [])
+        ]
+        node_ids = {n["data"]["id"] for n in nodes}
+        edges = [
+            {"data": {
+                "source": e["source"],
+                "target": e["target"],
+                "relation": e["relation"],
+            }}
+            for e in kg.get("edges", [])
+            if e["source"] in node_ids and e["target"] in node_ids
+        ]
         return {
             "plan_id": plan_id,
-            "version": version if version is not None else latest_version(self.plan_store, plan_id),
+            "version": resolved,
             "plan": plan,
             "decisions": plan.get("decisions", []),
-            "graph": elements,
+            "graph": {"nodes": nodes, "edges": edges},
+            "graph_style": "plan_detail",
         }
 
     # -- view 2b: plan diff ------------------------------------------------

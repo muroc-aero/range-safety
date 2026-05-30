@@ -1,16 +1,24 @@
-{# View 2a -- Plan graph (Planning state) #}
-<h2 class="view-title">Plan graph</h2>
-<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span> v{{ data.version }} &middot; provenance entities and relations. Click a node to inspect.</p>
+{# View 2a -- Plan detail graph (Planning state).
+   For omd this is the plan/problem structure (build_plan_graph, matching
+   /omd-plan-detail); for sdk sessions it falls back to the execution graph. #}
+<h2 class="view-title">Plan detail</h2>
+<p class="view-sub">Plan <span class="mono">{{ data.plan_id }}</span>{% if data.version %} v{{ data.version }}{% endif %} &middot;
+  {% if data.graph_style == "plan_detail" %}plan / problem structure: components, DVs, constraints, objective, solvers.{% else %}execution graph (no structured plan document for this session).{% endif %}
+  Click a node to inspect.</p>
 
+{% if data.graph_style == "plan_detail" %}
 <div class="graph-legend">
-  <span><span class="legend-dot" style="background:#2a4a7f"></span>plan</span>
-  <span><span class="legend-dot" style="background:#1a3a5a"></span>run</span>
-  <span><span class="legend-dot" style="background:#3a2a55"></span>assessment</span>
-  <span><span class="legend-dot" style="background:#2a2a10"></span>decision</span>
-  <span><span class="legend-dot" style="background:#15321f"></span>requirement</span>
+  <span><span class="legend-dot" style="background:#0d1f3c"></span>plan</span>
+  <span><span class="legend-dot" style="background:#0a1828"></span>surface</span>
+  <span><span class="legend-dot" style="background:#0a1828"></span>design var</span>
+  <span><span class="legend-dot" style="background:#0a2018"></span>constraint</span>
+  <span><span class="legend-dot" style="background:#0a1820"></span>objective</span>
+  <span><span class="legend-dot" style="background:#1a1808"></span>decision</span>
+  <span><span class="legend-dot" style="background:#1a0a20"></span>requirement</span>
 </div>
+{% endif %}
 
-<div class="cy-graph" data-cy="provenance" data-json="plan-graph-data"></div>
+<div class="cy-graph" data-cy="{{ data.graph_style or 'provenance' }}" data-json="plan-graph-data"></div>
 <script type="application/json" id="plan-graph-data">{{ data.graph | tojson }}</script>
 
 {% if data.decisions %}

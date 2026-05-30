@@ -256,13 +256,15 @@ class SdkSessionSource:
 
     def view_plan(self, session_id: str, version=None) -> dict:
         # No structured plan document for an sdk session; surface the
-        # tool_call/decision execution graph as the structure view.
+        # tool_call/decision execution graph as the structure view (rendered
+        # with the provenance/session style, not the plan-detail style).
         return {
             "plan_id": session_id,
             "version": None,
             "plan": {},
             "decisions": [],
             "graph": self._session_graph(session_id),
+            "graph_style": "session",
         }
 
     def view_plan_diff(self, session_id: str, version_a=None, version_b=None) -> dict:

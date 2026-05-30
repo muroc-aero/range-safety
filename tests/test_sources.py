@@ -176,10 +176,13 @@ def test_replay_omd_optimization_e2e(isolate_omd_data):
     assert state["current"] in (state_machine.EXECUTING, state_machine.VERIFYING,
                                 state_machine.CONCLUDING)
 
-    # The plan graph is the rich omd provenance DAG (decomposed entities).
-    graph = ms.view_plan("omd:parab")["graph"]
-    kinds = {n["data"]["kind"] for n in graph["nodes"]}
-    assert "plan" in kinds and "run_record" in kinds
+    # The plan view is the omd PLAN DETAIL graph (plan/problem structure),
+    # not the provenance DAG: plan root + design variables + objective.
+    pv = ms.view_plan("omd:parab")
+    assert pv["graph_style"] == "plan_detail"
+    node_types = {n["data"]["node_type"] for n in pv["graph"]["nodes"]}
+    assert "plan" in node_types and "design_variable" in node_types
+    assert "objective" in node_types
 
     # Results read the real final objective.
     runs = ms.list_runs("omd:parab")

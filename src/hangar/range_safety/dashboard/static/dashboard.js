@@ -89,7 +89,44 @@
       "curve-style": "bezier", label: "data(label)", "font-size": 8, color: "#5a6a8a"}},
   ]);
 
-  function styleFor(mode) { return mode === "study" ? STUDY_STYLE : PROVENANCE_STYLE; }
+  // Plan-detail style: the omd /omd-plan-detail palette, keyed on node_type
+  // (the plan/problem structure graph from build_plan_graph).
+  var PLAN_DETAIL_COLORS = {
+    plan: [160, 44, "#0d1f3c", "#4a9eff"], surface: [120, 36, "#0a1828", "#70b8ff"],
+    material: [110, 32, "#1a1028", "#a080c0"], fem_model: [100, 28, "#101820", "#5080a0"],
+    mesh: [100, 28, "#0e1828", "#6090b0"], flight_condition: [130, 36, "#0a1820", "#50c0f0"],
+    solver: [130, 36, "#101820", "#5080a0"], linear_solver: [100, 28, "#101820", "#406080"],
+    objective: [120, 32, "#0a1820", "#40d0e0"], design_variable: [120, 32, "#0a1828", "#50a0f0"],
+    constraint: [120, 32, "#0a2018", "#30c090"], requirement: [130, 32, "#1a0a20", "#a060c0"],
+    aircraft_config: [140, 40, "#0a1a1a", "#40b0a0"], mission_profile: [130, 36, "#0a1820", "#40b8d0"],
+    propulsion_architecture: [120, 32, "#1a1408", "#c08830"], slot_provider: [130, 36, "#14081a", "#9060c0"],
+    engine_config: [150, 44, "#1a1008", "#d09030"], engine_element: [110, 30, "#1a1408", "#b8a040"],
+    surrogate_deck: [130, 36, "#081a1a", "#3090a0"],
+  };
+  var PLAN_DETAIL_STYLE = [
+    {selector: 'node', style: Object.assign({}, BASE_NODE, {"background-color": "#111828", "border-color": "#3a4a6a"})},
+  ].concat(Object.keys(PLAN_DETAIL_COLORS).map(function (t) {
+    var c = PLAN_DETAIL_COLORS[t];
+    return {selector: 'node[node_type="' + t + '"]',
+            style: {width: c[0], height: c[1], "background-color": c[2], "border-color": c[3],
+                    "text-max-width": (c[0] - 16) + "px"}};
+  })).concat([
+    {selector: 'node[node_type="decision"]', style: {shape: "hexagon", width: 110, height: 55, "background-color": "#1a1808", "border-color": "#d0a030", color: "#f0d080"}},
+    {selector: 'node:selected', style: {"border-width": 3, "border-color": "#9ab0ff"}},
+    {selector: 'edge', style: {width: 2, "line-color": "#2a3a5a", "target-arrow-color": "#2a3a5a", "target-arrow-shape": "triangle", "curve-style": "bezier"}},
+    {selector: 'edge[relation="acts_on"]', style: {width: 3, "line-color": "#50a0f0", "target-arrow-color": "#50a0f0"}},
+    {selector: 'edge[relation="bounds"]', style: {"line-color": "#30c090", "target-arrow-color": "#30c090"}},
+    {selector: 'edge[relation="justifies"]', style: {"line-style": "dashed", "line-color": "#d0a030", "target-arrow-color": "#d0a030"}},
+    {selector: 'edge[relation="traces_to"]', style: {"line-style": "dotted", "line-color": "#a060c0", "target-arrow-color": "#a060c0"}},
+    {selector: 'edge[relation="flow_to"]', style: {width: 3, "line-color": "#c09030", "target-arrow-color": "#c09030"}},
+    {selector: 'edge[relation="has_architecture"]', style: {"line-color": "#c08830", "target-arrow-color": "#c08830"}},
+  ]);
+
+  function styleFor(mode) {
+    if (mode === "study") return STUDY_STYLE;
+    if (mode === "plan_detail") return PLAN_DETAIL_STYLE;
+    return PROVENANCE_STYLE;  // provenance / session (tool_call + decision)
+  }
   function layoutFor(mode) {
     var name = window.cytoscapeDagre ? "dagre" : "breadthfirst";
     if (mode === "study") return {name: name, rankDir: "LR", nodeSep: 30, rankSep: 70};

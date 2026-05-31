@@ -126,11 +126,17 @@ async def shell(request):
     rm = _read_model()
     plan_id = request.query_params.get("plan_id") or None
     run_id = request.query_params.get("run_id") or None
+    runs = rm.list_runs(plan_id) if plan_id else []
+    # Default to the study's latest run so the run-scoped views (results,
+    # plots) and the strip's executing link are reachable without a manual
+    # pick. The selector still lets you change it.
+    if plan_id and not run_id and runs:
+        run_id = runs[0]["run_id"]
     ctx = {
         "studies": rm.list_studies(),
         "plan_id": plan_id,
         "run_id": run_id,
-        "runs": rm.list_runs(plan_id) if plan_id else [],
+        "runs": runs,
         "machine": rm.machine(),
         "state": rm.get_state(plan_id) if plan_id else None,
         "state_labels": state_machine.STATE_LABELS,
@@ -141,12 +147,16 @@ async def shell(request):
 async def view_state_strip(request):
     rm = _read_model()
     plan_id = request.path_params["plan_id"]
+    run_id = request.query_params.get("run_id") or None
+    if not run_id:
+        runs = rm.list_runs(plan_id)
+        run_id = runs[0]["run_id"] if runs else None
     return templates.TemplateResponse(request, "_state_strip.html", {
         "machine": rm.machine(),
         "state": rm.get_state(plan_id),
         "state_labels": state_machine.STATE_LABELS,
         "plan_id": plan_id,
-        "run_id": request.query_params.get("run_id") or None,
+        "run_id": run_id,
     })
 
 

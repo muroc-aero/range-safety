@@ -62,6 +62,8 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
 }
 .state-node:hover { background: #252839; text-decoration: none; }
+.state-node.disabled { color: #555; cursor: not-allowed; }
+.state-node.disabled:hover { background: #1a1d27; }
 .state-node.current {
   background: #2a4a7f;
   border-color: #5a8aff;
@@ -110,6 +112,8 @@ a:hover { text-decoration: underline; }
 #nav a.nav-link:hover { background: #252839; text-decoration: none; }
 #nav a.nav-link.active { background: #1e243a; border-left-color: #5a8aff; color: #fff; }
 #nav a.nav-link.disabled { color: #555; cursor: not-allowed; }
+.nav-stage { float: right; font-size: 9px; color: #5a6080; text-transform: uppercase;
+  letter-spacing: .03em; margin-top: 2px; }
 
 #view { flex: 1; overflow: auto; padding: 16px 20px; min-width: 0; }
 

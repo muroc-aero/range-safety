@@ -66,6 +66,7 @@
     {selector: 'edge[relation="satisfies"]', style: {"line-color": "#40c080", "target-arrow-color": "#40c080", width: 3}},
     {selector: 'edge[relation="violates"]', style: {"line-color": "#e05050", "target-arrow-color": "#e05050", width: 3}},
     {selector: 'edge[relation="verifies"]', style: {"line-color": "#609088", "target-arrow-color": "#609088", width: 2.5}},
+    {selector: 'edge[relation="assesses"]', style: {"line-color": "#3ac8fa", "target-arrow-color": "#3ac8fa", width: 2.5}},
     {selector: 'edge[relation="informs"]', style: {"line-color": "#5aaa5a", "target-arrow-color": "#5aaa5a"}},
     {selector: 'edge[relation="decides"]', style: {"line-color": "#9a6add", "target-arrow-color": "#9a6add"}},
     {selector: 'edge[relation="cross_tool"]', style: {"line-style": "dashed", "line-color": "#ff9a3a", "target-arrow-color": "#ff9a3a"}},

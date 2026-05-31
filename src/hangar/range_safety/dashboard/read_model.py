@@ -420,6 +420,30 @@ class ReadModel:
             and e.get("subject_id") in node_ids
             and e.get("object_id") in node_ids
         ]
+        # Derive run_record -> assessment links. omd connects them through an
+        # activity (run --wasGeneratedBy--> act <--used-- ... ; assessment
+        # --wasGeneratedBy--> assess_act --used--> run), which the direct
+        # relation filter above drops, leaving the trace disconnected. Walk the
+        # activity chain so the results->assessment edges show ("assesses").
+        gen_activity: dict[str, str] = {}   # entity -> activity that generated it
+        used_entities: dict[str, list[str]] = {}  # activity -> entities it used
+        for e in dag.get("edges") or []:
+            rel, subj, obj = e.get("relation"), e.get("subject_id"), e.get("object_id")
+            if rel == "wasGeneratedBy":
+                gen_activity[subj] = obj
+            elif rel == "used":
+                used_entities.setdefault(subj, []).append(obj)
+        for node in nodes:
+            if node["data"]["kind"] != "assessment":
+                continue
+            aid = node["data"]["id"]
+            act = gen_activity.get(aid)
+            for used in used_entities.get(act, []):
+                if used in node_ids:
+                    edges.append({"data": {
+                        "source": used, "target": aid,
+                        "label": "assesses", "relation": "assesses",
+                    }})
 
         if focus is not None:
             keep = {focus}

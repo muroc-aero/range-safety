@@ -2,17 +2,25 @@
    lifecycle state (from recorded provenance), independent of the view you
    are looking at. Each state is also a link that loads that state's view
    (per DESIGN_views: "clicking a state loads that state's view"). #}
+{# executing maps to the run/results view (never the plan); disabled when the
+   study has no runs yet. The other states are plan-scoped. #}
 {% set targets = {
     "gather_requirements": "/view/requirements/" ~ plan_id,
     "planning": "/view/plan/" ~ plan_id,
-    "executing": ("/view/results/" ~ run_id) if run_id else ("/view/plan/" ~ plan_id),
+    "executing": ("/view/results/" ~ run_id) if run_id else None,
     "verifying": "/view/reasoning/" ~ plan_id,
     "concluding": "/view/report/" ~ plan_id,
 } %}
 {% for s in machine.states %}
+  {% set target = targets[s.id] %}
+  {% if target %}
   <a class="state-node {% if state and s.id == state.current %}current{% endif %}"
-     hx-get="{{ targets[s.id] }}" hx-target="#view" hx-push-url="false"
+     hx-get="{{ target }}" hx-target="#view" hx-push-url="false"
      title="Load the {{ s.label }} view">{{ s.label }}</a>
+  {% else %}
+  <span class="state-node disabled {% if state and s.id == state.current %}current{% endif %}"
+        title="No run recorded yet">{{ s.label }}</span>
+  {% endif %}
   {% if not loop.last %}<span class="state-arrow">&rarr;</span>{% endif %}
 {% endfor %}
 

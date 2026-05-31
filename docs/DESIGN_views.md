@@ -6,6 +6,34 @@ views, no build step. Each view is backed by a read-model method that
 returns plain data; the same method feeds a JSON endpoint, so any view
 can later be re-implemented as a SPA component without backend change.
 
+## Terminology and information architecture
+
+Two levels, kept distinct:
+
+- **Analysis** -- one engineering analysis task: a single **plan** (with its
+  versions) plus its **runs / results**. An analysis is what moves through the
+  **five-state machine** (gather_requirements -> planning -> executing ->
+  verifying -> concluding, with the rescope / rerun / replan feedback loops).
+  The **state strip** shows the current analysis's inferred state (a status
+  indicator; it does not change with the view tab). The toolbar selector picks
+  an analysis.
+- **State views** -- one per state, for the selected analysis: Requirements
+  (gather), Plan detail + Plan diff (planning), Results + Plots (executing),
+  Reasoning trace (verifying), Report (concluding). The left nav lists these
+  under "Analysis lifecycle", aligned with the strip.
+- **Study** -- an OPTIONAL larger scope: a *collection* of related analyses
+  (multiple plans, multiple results) such as a trade space or campaign. A
+  study is NOT a lifecycle state. It has its own overview (members, lineage,
+  metrics) that you drill *from* into a single analysis. Members are analyses
+  sharing `metadata.study`. This view is an early stub; the real
+  multi-analysis content is still to be built.
+
+Plan-graph note: the Planning view is the omd PLAN DETAIL graph
+(`hangar.omd.plan_graph.build_plan_graph`, the plan/problem structure), NOT
+the provenance/execution DAG. The provenance DAG
+(`build_provenance_elements`) is the execution lineage and lives under the
+Results (executing) view (to be enhanced).
+
 Common shape for every view:
 - A read-model method `view_<name>(...) -> dict` (pure data).
 - A route `GET /view/<name>` returning a server-rendered fragment, and

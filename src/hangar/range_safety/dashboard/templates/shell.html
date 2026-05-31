@@ -14,7 +14,7 @@
 
 <div id="toolbar">
   <h1>Analysis State Dashboard</h1>
-  <label for="plan-select">Study / plan</label>
+  <label for="plan-select">Analysis</label>
   <select id="plan-select" onchange="location.href='/?plan_id=' + encodeURIComponent(this.value)">
     <option value="">-- select --</option>
     {% for s in studies %}
@@ -43,34 +43,37 @@
 
 <div id="main">
   <nav id="nav">
-    <div class="nav-group">Plan</div>
-    {% set plan_views = [
-        ("requirements", "Requirements"),
-        ("plan", "Plan graph"),
-        ("plan-diff", "Plan diff"),
-        ("study", "Study"),
-        ("reasoning", "Reasoning trace"),
-        ("report", "Report")] %}
-    {% for slug, label in plan_views %}
-      {% if plan_id %}
+    {# The analysis lifecycle: one view per state of the five-state machine,
+       aligned with the state strip above. plan-scoped and (run) views. #}
+    <div class="nav-group">Analysis lifecycle</div>
+    {% set lifecycle = [
+        ("requirements", "Requirements", "Gather", false),
+        ("plan", "Plan detail", "Planning", false),
+        ("plan-diff", "Plan diff", "Planning", false),
+        ("results", "Results", "Executing", true),
+        ("plots", "Plots", "Executing", true),
+        ("reasoning", "Reasoning trace", "Verifying", false),
+        ("report", "Report", "Concluding", false)] %}
+    {% for slug, label, stage, run_scoped in lifecycle %}
+      {% set target_id = run_id if run_scoped else plan_id %}
+      {% if target_id %}
       <a class="nav-link {% if slug == 'requirements' %}active{% endif %}"
-         hx-get="/view/{{ slug }}/{{ plan_id }}" hx-target="#view" hx-push-url="false">{{ label }}</a>
+         hx-get="/view/{{ slug }}/{{ target_id }}" hx-target="#view" hx-push-url="false">{{ label }}
+         <span class="nav-stage">{{ stage }}</span></a>
       {% else %}
-      <a class="nav-link disabled">{{ label }}</a>
+      <a class="nav-link disabled" title="{% if run_scoped %}no run recorded{% else %}select an analysis{% endif %}">{{ label }}
+         <span class="nav-stage">{{ stage }}</span></a>
       {% endif %}
     {% endfor %}
 
-    <div class="nav-group">Run</div>
-    {% set run_views = [
-        ("results", "Results"),
-        ("plots", "Plots & visualization")] %}
-    {% for slug, label in run_views %}
-      {% if run_id %}
-      <a class="nav-link" hx-get="/view/{{ slug }}/{{ run_id }}" hx-target="#view" hx-push-url="false">{{ label }}</a>
-      {% else %}
-      <a class="nav-link disabled" title="select a run">{{ label }}</a>
-      {% endif %}
-    {% endfor %}
+    {# Study is NOT a lifecycle state -- it is the optional larger scope that
+       groups multiple analyses. (Overview view is an early stub.) #}
+    <div class="nav-group">Study scope <span class="nav-stage">multi-analysis</span></div>
+    {% if plan_id %}
+    <a class="nav-link" hx-get="/view/study/{{ plan_id }}" hx-target="#view" hx-push-url="false">Study overview</a>
+    {% else %}
+    <a class="nav-link disabled">Study overview</a>
+    {% endif %}
   </nav>
 
   <div id="view"

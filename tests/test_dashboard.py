@@ -179,6 +179,39 @@ def test_infer_concluding_when_primary_reqs_terminal_and_assessment():
     assert result["confidence"] >= 0.8
 
 
+def test_state_advances_as_process_moves():
+    """The strip's lit state is a status that advances as provenance accrues."""
+    # 1. Only draft requirements -> gather.
+    plan = _base_plan(requirements=[{"id": "R1", "text": "x", "status": "draft"}])
+    plan.pop("components")
+    empty = {"entities": [], "activities": [], "edges": []}
+    assert state_machine.infer_current_state(plan, empty)["current"] == "gather_requirements"
+
+    # 2. Settled reqs + a plan body, no runs -> planning.
+    plan = _base_plan(
+        requirements=[{"id": "R1", "text": "x", "status": "open"}],
+        design_variables=[{"name": "twist_cp", "upper": 10.0}],
+        objective={"name": "fuelburn"},
+    )
+    assert state_machine.infer_current_state(plan, empty)["current"] == "planning"
+
+    # 3. A run recorded, nothing assessed -> executing.
+    dag = {"entities": [{"entity_id": "run-1", "entity_type": "run_record",
+                         "plan_id": "study-1", "version": 1}],
+           "activities": [], "edges": []}
+    assert state_machine.infer_current_state(plan, dag)["current"] == "executing"
+
+    # 4. An assessment / verify edge appears -> verifying.
+    dag["entities"].append({"entity_id": "assess-1", "entity_type": "assessment",
+                            "plan_id": "study-1"})
+    assert state_machine.infer_current_state(plan, dag)["current"] == "verifying"
+
+    # 5. Primary requirements terminal + assessment -> concluding.
+    plan["requirements"] = [{"id": "R1", "text": "x", "priority": "primary",
+                             "status": "verified"}]
+    assert state_machine.infer_current_state(plan, dag)["current"] == "concluding"
+
+
 def test_transition_history_orders_and_labels_rerun():
     dag = {
         "entities": [

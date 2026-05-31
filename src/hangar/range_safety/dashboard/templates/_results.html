@@ -1,47 +1,95 @@
 {# View 3a -- Results (Executing state) #}
 <h2 class="view-title">Results</h2>
-<p class="view-sub">Run <span class="mono">{{ data.run_id }}</span> &middot; {{ data.history | length }} recorded case(s).</p>
+<p class="view-sub">Run <span class="mono">{{ data.run_id }}</span>
+  {%- if data.history %} &middot; {{ data.history | length }} recorded case(s){% endif %}.</p>
 
-{% macro check_strip(result, title) %}
-  {% if result %}
-  <div class="card">
-    <h3>{{ title }}
-      <span class="chip status-{{ 'verified' if result.passed else 'violated' }}">{{ 'pass' if result.passed else 'fail' }}</span>
-    </h3>
-    <div class="muted" style="margin-bottom:6px">{{ result.summary }}</div>
-    {% for c in result.checks %}
-      <div style="font-size:11px">
-        <span class="chip status-{{ 'verified' if c.passed else 'violated' }}">{{ c.name }}</span>
-        <span class="muted">{{ c.message }}</span>
-      </div>
-    {% endfor %}
+{# -- Headline metrics ------------------------------------------------- #}
+{% if data.headline %}
+<div class="group-label">Headline</div>
+<div class="headline-grid">
+  {% for m in data.headline %}
+  <div class="metric{{ ' metric-objective' if m.role == 'objective' else '' }}">
+    <div class="metric-label">{{ m.label }}{% if m.role == 'objective' %} <span class="chip">objective</span>{% endif %}</div>
+    <div class="metric-value mono">{{ '%.4g' % m.value if m.value is number else m.value }}{% if m.unit %} <span class="metric-unit">{{ m.unit }}</span>{% endif %}</div>
   </div>
-  {% endif %}
-{% endmacro %}
+  {% endfor %}
+</div>
+{% endif %}
 
-{% set v = data.validation or {} %}
-{{ check_strip(v.convergence, "Convergence") }}
-{{ check_strip(v.constraints, "Constraints") }}
-{% if v.error %}<div class="card"><span class="plot-error">Validation unavailable: {{ v.error }}</span></div>{% endif %}
+{# -- Constraint strip (value vs bound, with margin bars) -------------- #}
+{% if data.constraints %}
+<div class="group-label">Constraints</div>
+<div class="card">
+  {% for c in data.constraints %}
+  <div class="con-row">
+    <span class="chip status-{{ 'verified' if c.passed else 'violated' }}">{{ 'met' if c.passed else 'violated' }}</span>
+    <span class="con-name mono">{{ c.name }}</span>
+    <span class="con-bound mono muted">{{ c.bound_type }} {{ '%.4g' % c.bound if c.bound is number else c.bound }}</span>
+    <span class="con-val mono">= {{ '%.4g' % c.value if c.value is number else c.value }}</span>
+    {% if c.margin is not none %}
+    <span class="margin-bar" title="margin {{ '%.2f' % c.margin }}">
+      <span class="margin-fill {{ 'margin-ok' if c.passed else 'margin-bad' }}"
+            style="width: {{ (((c.margin if c.margin > 0 else -c.margin) * 100) | round) if (c.margin | abs) <= 1 else 100 }}%"></span>
+    </span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
+{# -- Check groups (convergence / physics findings) ------------------- #}
+{% for g in data.checks %}
+<div class="card">
+  <h3>{{ g.title }}
+    <span class="chip status-{{ 'verified' if g.passed else 'violated' }}">{{ 'pass' if g.passed else 'fail' }}</span>
+  </h3>
+  {% if g.summary %}<div class="muted" style="margin-bottom:6px">{{ g.summary }}</div>{% endif %}
+  {% for it in g['items'] %}
+  <div style="font-size:11px">
+    <span class="chip status-{{ 'verified' if it.passed else 'violated' }}">{{ it.name }}</span>
+    {% if it.severity %}<span class="chip">{{ it.severity }}</span>{% endif %}
+    <span class="muted">{{ it.message }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% if data.validation and data.validation.error %}
+<div class="card"><span class="plot-error">Validation unavailable: {{ data.validation.error }}</span></div>
+{% endif %}
+
+{# -- Optimization history (inline sparklines) ------------------------- #}
+{% if data.opt_history and data.opt_history.iterations %}
+<div class="group-label">Optimization history</div>
+<div class="card" data-sparklines data-json="opt-history-data"></div>
+<script type="application/json" id="opt-history-data">{{ data.opt_history | tojson }}</script>
+{% endif %}
+
+{# -- Execution graph -------------------------------------------------- #}
 {% if data.graph and data.graph.nodes %}
 <div class="group-label">Execution graph
-  <span class="muted" style="text-transform:none;font-weight:400">&middot; provenance / lineage (enhancement planned)</span>
+  <span class="muted" style="text-transform:none;font-weight:400">&middot; provenance / lineage</span>
 </div>
 <div class="cy-graph" style="height:420px" data-cy="{{ data.graph_style or 'provenance' }}" data-json="results-graph-data"></div>
 <script type="application/json" id="results-graph-data">{{ data.graph | tojson }}</script>
 {% endif %}
 
-<div class="group-label">Final values</div>
+{# -- Raw final values (full recorder state, collapsed) --------------- #}
 {% if data.final %}
-<table class="grid">
-  <thead><tr><th style="width:40%">Variable</th><th>Value</th></tr></thead>
-  <tbody>
-  {% for k, val in data.final.items() %}
-    <tr><td class="mono">{{ k }}</td><td class="mono">{{ val }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
+<details class="raw-final">
+  <summary class="group-label" style="cursor:pointer">All final values ({{ data.final | length }})</summary>
+  <table class="grid">
+    <thead><tr><th style="width:55%">Variable</th><th>Value</th></tr></thead>
+    <tbody>
+    {% for k, val in data.final.items() %}
+      <tr><td class="mono">{{ k }}</td><td class="mono">
+        {%- if val is number or val is string or val is boolean -%}{{ val }}
+        {%- elif val is iterable -%}<span class="muted">[array, {{ val | length }}]</span>
+        {%- else -%}{{ val }}{%- endif -%}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% elif not data.headline %}
 <div class="empty">No final case recorded for this run.</div>
 {% endif %}

@@ -433,11 +433,15 @@ def test_app_view_fragments_render(isolate_omd_data):
     report = client.get("/view/report/study-1")
     assert report.status_code == 200 and "scorecard" in report.text
 
-    # run-scoped: results renders convergence + constraints + final value
+    # run-scoped: results renders the headline card, the value-vs-bound
+    # constraint strip, the convergence check group, and the raw final values.
     results = client.get("/view/results/run-1")
     assert results.status_code == 200
     assert "Convergence" in results.text and "Constraints" in results.text
-    assert "950.0" in results.text
+    assert "headline-grid" in results.text  # headline metrics card
+    assert "objective" in results.text      # structural_mass is the objective
+    assert "margin-bar" in results.text     # failure <= 0 gets a margin bar
+    assert "950.0" in results.text          # raw final value still available
 
     # plot galleries render (types may be empty without an artifact backend)
     assert client.get("/view/visualization/run-1").status_code == 200

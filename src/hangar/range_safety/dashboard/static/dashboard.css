@@ -208,3 +208,35 @@ table.grid tr:hover td { background: #181b27; }
 .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
 .empty { color: #666; font-style: italic; padding: 24px 0; }
 code.path { background: #12141e; padding: 1px 5px; border-radius: 3px; color: #aac0e8; }
+
+/* -- results: headline metrics ---------------------------------------- */
+.headline-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; margin-bottom: 8px; }
+.metric { background: #1a1d27; border: 1px solid #2d3047; border-radius: 8px; padding: 10px 12px; }
+.metric-objective { border-color: #2c486b; background: #15233a; }
+.metric-label { font-size: 11px; color: #8a90b0; margin-bottom: 4px; }
+.metric-label .chip { background: #2a4a7f; color: #cfe0ff; padding: 0 6px; font-size: 9px; }
+.metric-value { font-size: 18px; color: #e6ebff; }
+.metric-unit { font-size: 11px; color: #6a7090; }
+
+/* -- results: constraint strip (value vs bound + margin bar) ---------- */
+.con-row { display: flex; align-items: center; gap: 10px; font-size: 12px;
+  padding: 3px 0; flex-wrap: wrap; }
+.con-name { color: #c4ccea; min-width: 160px; }
+.con-bound { font-size: 11px; }
+.con-val { color: #e6ebff; }
+.margin-bar { flex: 1; min-width: 80px; max-width: 220px; height: 6px; border-radius: 3px;
+  background: #12141e; border: 1px solid #2d3047; overflow: hidden; }
+.margin-fill { display: block; height: 100%; }
+.margin-ok { background: #4cdf88; }
+.margin-bad { background: #ff6a6a; }
+
+/* -- results: optimization-history sparklines ------------------------- */
+.spark-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 11px; }
+.spark-label { min-width: 130px; color: #c4ccea; }
+.spark { background: #12141e; border: 1px solid #2d3047; border-radius: 4px; }
+.spark-vals { font-size: 10px; }
+.spark-foot { font-size: 10px; margin-top: 8px; }
+
+.raw-final summary { list-style: revert; }
+.raw-final summary::-webkit-details-marker { display: revert; }

@@ -90,3 +90,39 @@ def test_missing_constraint_variable_fails(isolate_omd_data):
     }
     result = assert_constraints(run_id, plan, db_path=db_path)
     assert result["passed"] is False
+
+
+def test_constraint_resolves_deep_dotted_path(isolate_omd_data):
+    """A plan's partial constraint name resolves to a deeper recorder key.
+
+    Plans name constraints by a partial path (``AS_point_0.wing_perf.failure``)
+    but the recorder stores a deeper key (``...struct_funcs.failure.failure``).
+    The shared resolver matches on the last segment, so it is found.
+    """
+    db_path = isolate_omd_data / "analysis.db"
+    run_id = "run-deep-001"
+    _setup_run(db_path, run_id, {
+        "AS_point_0.wing_perf.struct_funcs.failure.failure": -0.04,
+    })
+    plan = {"constraints": [{"name": "AS_point_0.wing_perf.failure", "upper": 0.0}]}
+    result = assert_constraints(run_id, plan, db_path=db_path)
+
+    assert result["passed"] is True
+    check = result["checks"][0]
+    # Structured fields drive the dashboard's value-vs-bound margin bar.
+    assert check["value"] == -0.04
+    assert check["bound_type"] == "upper" and check["bound"] == 0.0
+    assert check["margin"] is not None and check["margin"] > 0  # satisfied with room
+
+
+def test_equality_constraint_has_no_margin_bar(isolate_omd_data):
+    """Equality constraints carry structured fields but no slack margin."""
+    db_path = isolate_omd_data / "analysis.db"
+    run_id = "run-eq-margin"
+    _setup_run(db_path, run_id, {"L_equals_W": 0.0})
+    plan = {"constraints": [{"name": "L_equals_W", "equals": 0.0}]}
+    check = assert_constraints(run_id, plan, db_path=db_path)["checks"][0]
+
+    assert check["bound_type"] == "equals"
+    assert check["value"] == 0.0
+    assert check["margin"] is None  # rendered as a met/unmet chip, not a bar

@@ -35,6 +35,80 @@ def split_key(key: str, default: str = DEFAULT_SOURCE) -> tuple[str, str]:
     return default, key
 
 
+# Display order + unit hints for sdk headline scalars across oas / ocp / pyc.
+# Keys not listed still appear, after the known ones, in declaration order.
+_SDK_HEADLINE_ORDER = [
+    "CL", "CD", "CM", "L_over_D",          # oas aero
+    "fuelburn", "failure", "structural_mass",
+    "fuel_burn", "range", "MTOW", "TOFL",  # ocp mission
+    "TSFC", "Fn", "OPR", "thrust",         # pyc cycle
+]
+_SDK_UNITS = {
+    "fuelburn": "kg", "fuel_burn": "kg", "structural_mass": "kg",
+    "range": "km", "MTOW": "kg", "TOFL": "m",
+    "TSFC": "lbm/hr/lbf", "Fn": "lbf", "thrust": "lbf",
+}
+
+
+def _sdk_headline(results: dict) -> list[dict]:
+    """Headline metrics from an sdk envelope's already-clean named scalars.
+
+    No path resolution: the envelope exposes ``CL``/``CD``/``L_over_D`` etc.
+    at the top level. Known keys lead in a stable order; the rest follow.
+    Heavy / private payload (surfaces, ``_surface_dicts``, ...) is skipped.
+    """
+    scalars = {
+        k: v for k, v in (results or {}).items()
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+        and not k.startswith("_")
+    }
+    ordered = [k for k in _SDK_HEADLINE_ORDER if k in scalars]
+    ordered += [k for k in scalars if k not in _SDK_HEADLINE_ORDER]
+    return [
+        {
+            "name": k,
+            "label": k,
+            "value": scalars[k],
+            "unit": _SDK_UNITS.get(k, ""),
+            "role": "metric",
+        }
+        for k in ordered
+    ]
+
+
+def _sdk_checks(validation: dict | None) -> list[dict]:
+    """Map an sdk validation envelope onto the normalized check-strip groups.
+
+    The envelope's ``all_findings`` (physics / numerics checks, each with a
+    severity and message) become a single "Physics & numerics" group so sdk
+    runs render the same check strip as omd's convergence/constraint checks.
+    """
+    if not validation:
+        return []
+    findings = validation.get("all_findings") or validation.get("findings") or []
+    items = [
+        {
+            "name": f.get("check_id", ""),
+            "passed": bool(f.get("passed", True)),
+            "message": f.get("message", ""),
+            "severity": f.get("severity"),
+        }
+        for f in findings
+    ]
+    if not items:
+        return []
+    summary = (
+        f"{validation.get('error_count', 0)} error(s), "
+        f"{validation.get('warning_count', 0)} warning(s)"
+    )
+    return [{
+        "title": "Physics & numerics",
+        "passed": bool(validation.get("passed", all(i["passed"] for i in items))),
+        "summary": summary,
+        "items": items,
+    }]
+
+
 class OmdSource(ReadModel):
     """Plan-centric source (the original read model)."""
 
@@ -333,9 +407,17 @@ class SdkSessionSource:
         data = {
             "run_id": run_id,
             "run_entity": artifact.get("metadata"),
+            # The sdk envelope already exposes clean named scalars, so the
+            # headline maps straight off them (no path resolution needed).
+            "headline": _sdk_headline(results),
+            "constraints": [],  # sdk has no plan constraints; findings -> checks
+            # The envelope's own validation block (physics/numerics findings)
+            # is no longer discarded: it maps onto the same check strip as omd.
+            "checks": _sdk_checks(artifact.get("validation")),
+            "opt_history": {},  # single-shot analyses have no iteration history
             "final": final or None,
             "history": [],
-            "validation": {},  # sdk validation envelope differs; TODO normalize
+            "validation": artifact.get("validation") or {},
         }
         # Execution graph: the run's session tool_call/decision graph.
         session_id = (artifact.get("metadata") or {}).get("session_id")

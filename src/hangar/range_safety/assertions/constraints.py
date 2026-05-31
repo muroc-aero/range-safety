@@ -6,15 +6,39 @@ at the final point of a completed run.
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
-from hangar.results_reader import init_analysis_db, query_run_results
+from hangar.results_reader import init_analysis_db, query_run_results, resolve_scalar
 
 
-def _check(name: str, passed: bool, message: str) -> dict:
-    """Build a check result dict."""
-    return {"name": name, "passed": passed, "message": message}
+def _check(name: str, passed: bool, message: str, **extra: object) -> dict:
+    """Build a check result dict.
+
+    ``extra`` carries the optional structured fields (label, value, bound,
+    bound_type, margin) the dashboard uses to draw a value-vs-bound margin
+    bar. They are additive; the name/passed/message fields are unchanged.
+    """
+    return {"name": name, "passed": passed, "message": message, **extra}
+
+
+def _signed_margin(value: float, bound: float, bound_type: str) -> float | None:
+    """Signed, scale-normalized slack to an inequality bound.
+
+    >0 means satisfied with room, ~0 means on the bound, <0 means violated.
+    Normalizing by ``max(|bound|, |value|)`` keeps it well-defined even when
+    the bound is zero (e.g. ``failure <= 0``), and bounds it to roughly
+    [-1, 1] so a bar can render it directly. Equality constraints have no
+    meaningful slack (they are met or not), so they return ``None`` and the
+    strip renders them as a met/unmet chip rather than a bar.
+    """
+    if bound_type == "equals":
+        return None
+    scale = max(abs(bound), abs(value), 1e-12)
+    if bound_type == "upper":
+        return (bound - value) / scale
+    if bound_type == "lower":
+        return (value - bound) / scale
+    return None
 
 
 def assert_constraints(
@@ -90,35 +114,47 @@ def assert_constraints(
         # Check bounds
         satisfied = True
         details = f"value={value:.6g}"
+        bound_type: str | None = None
+        bound: float | None = None
 
         if "upper" in con:
-            upper = con["upper"]
-            if value > upper + tol:
+            bound_type, bound = "upper", con["upper"]
+            if value > bound + tol:
                 satisfied = False
-                details += f", violates upper={upper} by {value - upper:.6g}"
+                details += f", violates upper={bound} by {value - bound:.6g}"
             else:
-                details += f", upper={upper} OK"
+                details += f", upper={bound} OK"
 
         if "lower" in con:
-            lower = con["lower"]
-            if value < lower - tol:
+            bound_type, bound = "lower", con["lower"]
+            if value < bound - tol:
                 satisfied = False
-                details += f", violates lower={lower} by {lower - value:.6g}"
+                details += f", violates lower={bound} by {bound - value:.6g}"
             else:
-                details += f", lower={lower} OK"
+                details += f", lower={bound} OK"
 
         if "equals" in con:
-            equals = con["equals"]
-            if abs(value - equals) > tol:
+            bound_type, bound = "equals", con["equals"]
+            if abs(value - bound) > tol:
                 satisfied = False
-                details += f", violates equals={equals} by {abs(value - equals):.6g}"
+                details += f", violates equals={bound} by {abs(value - bound):.6g}"
             else:
-                details += f", equals={equals} OK"
+                details += f", equals={bound} OK"
 
+        margin = (
+            _signed_margin(value, bound, bound_type)
+            if bound_type is not None
+            else None
+        )
         checks.append(_check(
             f"constraint_{con_name}",
             satisfied,
             f"Constraint '{con_name}': {details}",
+            label=con_name.rsplit(".", 1)[-1],
+            value=value,
+            bound=bound,
+            bound_type=bound_type,
+            margin=margin,
         ))
 
     all_passed = all(c["passed"] for c in checks)
@@ -142,36 +178,12 @@ def _find_constraint_value(
 ) -> float | None:
     """Find a constraint variable's scalar value in case data.
 
-    Tries exact match first, then partial/suffix matching for
-    OAS variable path conventions.
+    Delegates to the shared ``resolve_scalar`` seam resolver so constraint
+    lookup matches exactly how the headline projection and opt-history
+    trajectories resolve names. This also fixes a prior bug: matching the full
+    partial path as a substring missed recorder keys with extra intermediate
+    groups (e.g. plan ``AS_point_0.wing_perf.failure`` vs recorded
+    ``AS_point_0.wing_perf.struct_funcs.failure.failure``); resolving on the
+    last path segment finds it.
     """
-    # Exact match
-    if con_name in data:
-        return _to_scalar(data[con_name])
-
-    # Partial match: look for keys ending with the constraint name
-    for key, val in data.items():
-        if key.endswith(f".{con_name}") or key.endswith(f"_{con_name}"):
-            return _to_scalar(val)
-
-    # Broader partial match
-    for key, val in data.items():
-        if con_name in key:
-            return _to_scalar(val)
-
-    return None
-
-
-def _to_scalar(value: object) -> float | None:
-    """Convert a value to a scalar float, or None if not possible."""
-    if isinstance(value, (int, float)):
-        if math.isnan(value) or math.isinf(value):
-            return None
-        return float(value)
-    if isinstance(value, (list, tuple)):
-        # For array constraints, use the max value (worst case)
-        scalars = [_to_scalar(v) for v in value]
-        valid = [s for s in scalars if s is not None]
-        if valid:
-            return max(valid)
-    return None
+    return resolve_scalar(data, con_name)

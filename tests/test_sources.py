@@ -20,6 +20,8 @@ from hangar.range_safety.dashboard.sources import (
     MultiSource,
     SdkSessionSource,
     split_key,
+    _sdk_checks,
+    _sdk_headline,
 )
 
 
@@ -55,6 +57,47 @@ def test_split_key():
     assert split_key("omd:study-1") == ("omd", "study-1")
     assert split_key("sdk:sess-9") == ("sdk", "sess-9")
     assert split_key("bare-id") == ("omd", "bare-id")  # default source
+
+
+# ---------------------------------------------------------------------------
+# sdk envelope -> normalized headline + check strip
+# ---------------------------------------------------------------------------
+
+
+def test_sdk_headline_orders_known_keys_and_skips_payload():
+    results = {
+        "CD": 0.0043, "CL": 0.47, "L_over_D": 109.7,
+        "surfaces": {}, "_surface_dicts": {}, "standard_detail": {},
+    }
+    headline = _sdk_headline(results)
+    labels = [m["label"] for m in headline]
+    # Known keys lead in the stable display order; heavy/private payload drops.
+    assert labels == ["CL", "CD", "L_over_D"]
+    assert all(m["role"] == "metric" for m in headline)
+
+
+def test_sdk_checks_maps_validation_findings():
+    validation = {
+        "passed": True, "error_count": 0, "warning_count": 1,
+        "all_findings": [
+            {"check_id": "physics.cd_positive", "passed": True,
+             "message": "CD > 0", "severity": "error"},
+            {"check_id": "physics.cl_reasonable", "passed": True,
+             "message": "CL ok", "severity": "warning"},
+        ],
+    }
+    groups = _sdk_checks(validation)
+    assert len(groups) == 1
+    group = groups[0]
+    assert group["title"] == "Physics & numerics" and group["passed"] is True
+    assert [i["name"] for i in group["items"]] == [
+        "physics.cd_positive", "physics.cl_reasonable"]
+    assert group["items"][1]["severity"] == "warning"
+
+
+def test_sdk_checks_empty_without_validation():
+    assert _sdk_checks(None) == []
+    assert _sdk_checks({}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +264,20 @@ def test_replay_omd_optimization_e2e(isolate_omd_data):
     assert runs and runs[0]["run_id"] == f"omd:{run_id}"
     results = ms.view_results(f"omd:{run_id}")
     assert results["final"]["paraboloid.f_xy"] < -27.0  # analytic optimum is -82/3
+
+    # Headline projection surfaces the plan objective first, by name.
+    headline = results["headline"]
+    assert headline and headline[0]["role"] == "objective"
+    assert headline[0]["label"] == "f_xy"
+    assert headline[0]["value"] < -27.0
+
+    # Optimization history carries the objective + DV trajectories, downsampled.
+    hist = results["opt_history"]
+    assert hist["iterations"] and len(hist["iterations"]) <= 100
+    assert hist["objective"]["label"] == "f_xy"
+    assert len(hist["objective"]["values"]) == len(hist["iterations"])
+    dv_labels = {d["label"] for d in hist.get("design_variables", [])}
+    assert {"x", "y"} <= dv_labels
 
     # Plots render through the omd recorder path (factory-aware), PNG bytes.
     types = ms.plot_types(f"omd:{run_id}")

@@ -17,9 +17,11 @@ from typing import Any
 
 from hangar.results_reader import (
     init_analysis_db,
+    project_headline,
     query_entity,
     query_provenance_dag,
     query_run_results,
+    resolve_scalar,
 )
 
 from hangar.range_safety.dashboard import plan_diff, plot_adapter, state_machine
@@ -364,10 +366,144 @@ class ReadModel:
         return {
             "run_id": run_id,
             "run_entity": run_entity,
+            "headline": project_headline(run_id, plan),
+            "constraints": self._constraint_strip(plan, validation.get("constraints")),
+            "checks": self._result_checks(validation),
+            "opt_history": self._opt_history(cases, plan),
             "final": final.get("data") if final else None,
             "history": cases,
             "validation": validation,
         }
+
+    @staticmethod
+    def _result_checks(validation: dict) -> list[dict]:
+        """Normalized check-strip groups for omd (the convergence group).
+
+        Plan constraints are shown as the value-vs-bound margin strip
+        (``_constraint_strip``); the remaining verification signal is
+        convergence, surfaced here in the same group shape the sdk source
+        uses, so one template renders both sources' checks.
+        """
+        groups: list[dict] = []
+        conv = validation.get("convergence")
+        if conv:
+            groups.append({
+                "title": "Convergence",
+                "passed": bool(conv.get("passed")),
+                "summary": conv.get("summary", ""),
+                "items": conv.get("checks", []),
+            })
+        return groups
+
+    # -- results helpers ---------------------------------------------------
+
+    @staticmethod
+    def _constraint_strip(
+        plan: dict | None, constraints_result: dict | None
+    ) -> list[dict]:
+        """Per-constraint value/bound/margin rows for the constraint strip.
+
+        Reuses the structured checks produced by ``assert_constraints`` (which
+        already resolves each constraint's value and bound). Each row carries a
+        normalized ``margin`` in [0, 1+] for a bar: 1.0 means exactly on the
+        bound, <1 is satisfied with room, >1 is a violation. Rows without a
+        resolved value (or when no plan/constraints exist) are dropped.
+        """
+        if not constraints_result:
+            return []
+        rows: list[dict] = []
+        for check in constraints_result.get("checks", []):
+            if "value" not in check or check.get("bound_type") is None:
+                continue
+            rows.append({
+                "name": check.get("label", check.get("name", "")),
+                "value": check["value"],
+                "bound": check.get("bound"),
+                "bound_type": check.get("bound_type"),
+                "passed": bool(check.get("passed")),
+                "margin": check.get("margin"),
+                "message": check.get("message", ""),
+            })
+        return rows
+
+    @staticmethod
+    def _opt_history(cases: list[dict], plan: dict | None) -> dict:
+        """Compact objective / constraint / DV trajectories for sparklines.
+
+        Reads the ordered ``driver`` cases (the optimizer iterations) and
+        resolves the plan's objective, constraints, and design variables to a
+        scalar per iteration (vectors collapse to magnitude-max, matching the
+        headline projection). Downsamples to ~100 evenly spaced points so a
+        thousand-iteration run stays cheap to render. Returns an empty dict for
+        single-shot analyses (no driver iterations) -- honest, not fabricated.
+        """
+        driver = [c for c in cases if c.get("case_type") == "driver"]
+        if len(driver) < 2 or not plan:
+            return {}
+
+        # Downsample to <= MAX_POINTS evenly spaced iterations.
+        max_points = 100
+        n = len(driver)
+        if n > max_points:
+            step = n / max_points
+            idx = sorted({int(i * step) for i in range(max_points)} | {n - 1})
+        else:
+            idx = list(range(n))
+        sampled = [driver[i] for i in idx]
+        iterations = [driver[i].get("iteration", i) for i in idx]
+
+        def trace(name: str) -> list[float | None]:
+            return [resolve_scalar(c.get("data") or {}, name) for c in sampled]
+
+        history: dict[str, Any] = {"iterations": iterations}
+
+        objective = (plan.get("objective") or {}).get("name")
+        if objective:
+            values = trace(objective)
+            if any(v is not None for v in values):
+                history["objective"] = {
+                    "label": objective.rsplit(".", 1)[-1],
+                    "values": values,
+                }
+
+        cons: list[dict] = []
+        for con in plan.get("constraints", []) or []:
+            cname = con.get("name")
+            if not cname:
+                continue
+            values = trace(cname)
+            if any(v is not None for v in values):
+                bound_type = next(
+                    (b for b in ("upper", "lower", "equals") if b in con), None
+                )
+                cons.append({
+                    "label": cname.rsplit(".", 1)[-1],
+                    "values": values,
+                    "bound": con.get(bound_type) if bound_type else None,
+                    "bound_type": bound_type,
+                })
+        if cons:
+            history["constraints"] = cons
+
+        dvs: list[dict] = []
+        for dv in plan.get("design_variables", []) or []:
+            dname = dv.get("name")
+            if not dname:
+                continue
+            values = trace(dname)
+            if any(v is not None for v in values):
+                dvs.append({
+                    "label": dname.rsplit(".", 1)[-1],
+                    "values": values,
+                    "units": dv.get("units", ""),
+                })
+        if dvs:
+            history["design_variables"] = dvs
+
+        # Only worth returning if at least one real trajectory was resolved.
+        if len(history) == 1:  # just "iterations"
+            return {}
+        return history
 
     def plot_types(self, run_id: str) -> list[str]:
         return plot_adapter.plot_types(run_id)

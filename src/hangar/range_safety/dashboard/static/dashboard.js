@@ -238,6 +238,89 @@
     load(types[0]);
   }
 
+  // -- opt-history sparklines ---------------------------------------------
+  // Compact inline SVG trajectories (objective / constraints / DVs) read from
+  // the embedded opt_history JSON. Lightweight by design: the full matplotlib
+  // plots remain available in the Plots panel. Null points (unresolved at an
+  // iteration) leave gaps rather than fabricating a value.
+  function sparkSvg(values, opts) {
+    opts = opts || {};
+    var w = 120, h = 28, pad = 2;
+    var nums = values.filter(function (v) { return v !== null && v !== undefined; });
+    if (nums.length < 2) return "";
+    var lo = Math.min.apply(null, nums), hi = Math.max.apply(null, nums);
+    var span = hi - lo || 1;
+    var n = values.length;
+    function x(i) { return pad + (i / (n - 1)) * (w - 2 * pad); }
+    function y(v) { return h - pad - ((v - lo) / span) * (h - 2 * pad); }
+    var segs = [], cur = [];
+    values.forEach(function (v, i) {
+      if (v === null || v === undefined) { if (cur.length) { segs.push(cur); cur = []; } return; }
+      cur.push(x(i).toFixed(1) + "," + y(v).toFixed(1));
+    });
+    if (cur.length) segs.push(cur);
+    var polys = segs.map(function (pts) {
+      return '<polyline fill="none" stroke="' + (opts.stroke || "#3b82f6") +
+        '" stroke-width="1.5" points="' + pts.join(" ") + '"/>';
+    }).join("");
+    var bound = "";
+    if (opts.bound !== null && opts.bound !== undefined &&
+        opts.bound >= lo && opts.bound <= hi) {
+      var by = y(opts.bound).toFixed(1);
+      bound = '<line x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) +
+        '" y2="' + by + '" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2"/>';
+    }
+    return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' +
+      w + ' ' + h + '">' + bound + polys + "</svg>";
+  }
+
+  function fmt(v) {
+    if (v === null || v === undefined) return "n/a";
+    var a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(2);
+    return (Math.round(v * 1e4) / 1e4).toString();
+  }
+
+  function sparkRow(label, values, opts) {
+    var first = null, last = null;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] !== null && values[i] !== undefined) { if (first === null) first = values[i]; last = values[i]; }
+    }
+    var svg = sparkSvg(values, opts);
+    var unit = opts && opts.unit ? " " + opts.unit : "";
+    return '<div class="spark-row">' +
+      '<span class="spark-label mono">' + label + "</span>" +
+      (svg || '<span class="muted">(no trajectory)</span>') +
+      '<span class="spark-vals mono muted">' + fmt(first) + " &rarr; " + fmt(last) + unit + "</span>" +
+      "</div>";
+  }
+
+  function renderSparklines(container) {
+    var jsonEl = document.getElementById(container.getAttribute("data-json"));
+    var h = jsonEl ? JSON.parse(jsonEl.textContent) : {};
+    if (!h || !h.iterations) { container.innerHTML = ""; return; }
+    var html = "";
+    if (h.objective) {
+      html += '<div class="group-label">Objective</div>';
+      html += sparkRow(h.objective.label, h.objective.values, {stroke: "#2563eb"});
+    }
+    if (h.constraints && h.constraints.length) {
+      html += '<div class="group-label">Constraints</div>';
+      h.constraints.forEach(function (c) {
+        html += sparkRow(c.label, c.values, {stroke: "#d97706", bound: c.bound});
+      });
+    }
+    if (h.design_variables && h.design_variables.length) {
+      html += '<div class="group-label">Design variables</div>';
+      h.design_variables.forEach(function (d) {
+        html += sparkRow(d.label, d.values, {stroke: "#059669", unit: d.units});
+      });
+    }
+    container.innerHTML = html +
+      '<div class="muted spark-foot">' + h.iterations.length +
+      " sampled iteration(s). Full plots in the Plots panel.</div>";
+  }
+
   // -- hydration scan ------------------------------------------------------
   function hydrate(root) {
     bindPanelClose();
@@ -247,6 +330,7 @@
       var graph = jsonEl ? JSON.parse(jsonEl.textContent) : {nodes: [], edges: []};
       renderGraph(c, mode, graph);
     });
+    root.querySelectorAll("[data-sparklines]").forEach(renderSparklines);
     root.querySelectorAll("[data-plot-gallery]").forEach(renderGallery);
   }
 

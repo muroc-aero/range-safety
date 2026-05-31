@@ -11,8 +11,11 @@ from pathlib import Path
 
 import yaml
 
+from starlette.testclient import TestClient
+
 from hangar.omd.db import init_analysis_db, record_entity, record_run_case
 from hangar.range_safety.dashboard import state_machine
+from hangar.range_safety.dashboard.app import app
 from hangar.range_safety.dashboard.sources import (
     MultiSource,
     SdkSessionSource,
@@ -136,6 +139,35 @@ def test_multisource_dispatches_by_prefix(isolate_omd_data):
     assert sdk_runs and sdk_runs[0]["run_id"].startswith("sdk:")
     res = ms.view_results(sdk_runs[0]["run_id"])
     assert res["final"] and res["run_id"].startswith("sdk:")
+
+
+def test_list_studies_sorted_newest_first(isolate_omd_data):
+    tmp = isolate_omd_data
+    init_analysis_db(tmp / "analysis.db")
+    record_entity("old/v1", "plan", "t", plan_id="old", version=1)
+    record_entity("new/v1", "plan", "t", plan_id="new", version=1)
+    studies = MultiSource().list_studies()
+    keys = [s["key"] for s in studies]
+    assert "omd:old" in keys and "omd:new" in keys
+    # The list is ordered by the 'updated' timestamp, newest first.
+    ups = [s.get("updated") or "" for s in studies]
+    assert ups == sorted(ups, reverse=True)
+
+
+def test_shell_filters_by_source_and_text(isolate_omd_data):
+    tmp = isolate_omd_data
+    init_analysis_db(tmp / "analysis.db")
+    record_entity("wing-opt/v1", "plan", "t", plan_id="wing-opt", version=1)
+    record_entity("engine-sizing/v1", "plan", "t", plan_id="engine-sizing", version=1)
+    _seed_sdk_session(tmp)
+
+    client = TestClient(app)
+    # Source filter: omd only -> no [sdk] options.
+    omd_only = client.get("/?src=omd").text
+    assert "[omd]" in omd_only and "[sdk]" not in omd_only
+    # Text filter: substring on the analysis id.
+    filtered = client.get("/?q=wing").text
+    assert "wing-opt" in filtered and "engine-sizing" not in filtered
 
 
 # ---------------------------------------------------------------------------

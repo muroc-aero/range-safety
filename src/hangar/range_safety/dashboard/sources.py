@@ -136,15 +136,20 @@ class OmdSource(ReadModel):
         from hangar.results_reader.db import _get_conn  # noqa: PLC0415
 
         rows = _get_conn().execute(
-            "SELECT plan_id, entity_type, version FROM entities WHERE plan_id IS NOT NULL"
+            "SELECT plan_id, entity_type, version, created_at "
+            "FROM entities WHERE plan_id IS NOT NULL"
         ).fetchall()
         types_by_plan: dict[str, set] = {}
         version_by_plan: dict[str, int] = {}
+        updated_by_plan: dict[str, str] = {}
         for r in rows:
             pid = r["plan_id"]
             types_by_plan.setdefault(pid, set()).add(r["entity_type"])
             if r["entity_type"] == "plan" and r["version"] is not None:
                 version_by_plan[pid] = max(version_by_plan.get(pid, 0), r["version"])
+            ts = r["created_at"] or ""
+            if ts > updated_by_plan.get(pid, ""):
+                updated_by_plan[pid] = ts
 
         return [
             {
@@ -154,6 +159,7 @@ class OmdSource(ReadModel):
                 "version": version_by_plan.get(pid),
                 "current_state": self._cheap_state(types_by_plan[pid]),
                 "source": self.name,
+                "updated": updated_by_plan.get(pid, ""),
             }
             for pid in sorted(types_by_plan)
         ]
@@ -204,6 +210,7 @@ class SdkSessionSource:
                 "current_state": self._state_from_counts(
                     s.get("tool_call_count", 0), s.get("decision_count", 0)),
                 "source": self.name,
+                "updated": s.get("started_at") or "",
             })
         return out
 
@@ -359,6 +366,9 @@ class MultiSource:
                 studies.extend(src.list_studies())
             except Exception:  # noqa: BLE001 - a bad source must not break the list
                 continue
+        # Newest first (by last-updated timestamp), so the most recent
+        # analyses are at the top of the selector.
+        studies.sort(key=lambda s: s.get("updated") or "", reverse=True)
         return studies
 
     def list_runs(self, study_key: str) -> list[dict]:

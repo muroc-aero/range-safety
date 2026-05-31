@@ -14,9 +14,21 @@
 
 <div id="toolbar">
   <h1>Analysis State Dashboard</h1>
+
+  <label for="src-select">Source</label>
+  <select id="src-select" onchange="applyFilter()">
+    {% for opt in ["all", "omd", "sdk"] %}
+    <option value="{{ opt }}" {% if src == opt %}selected{% endif %}>{{ opt }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="q-input">Filter</label>
+  <input id="q-input" type="text" value="{{ q }}" placeholder="name / id, Enter to apply"
+         style="width:170px" onkeydown="if(event.key==='Enter')applyFilter()">
+
   <label for="plan-select">Analysis</label>
-  <select id="plan-select" onchange="location.href='/?plan_id=' + encodeURIComponent(this.value)">
-    <option value="">-- select --</option>
+  <select id="plan-select" onchange="selectStudy(this.value)">
+    <option value="">-- select ({{ studies_shown }} of {{ studies_total }}) --</option>
     {% for s in studies %}
     <option value="{{ s.key }}" {% if s.key == plan_id %}selected{% endif %}>
       [{{ s.source }}] {{ s.label }}{% if s.version %} (v{{ s.version }}){% endif %} -- {{ state_labels.get(s.current_state, s.current_state) }}
@@ -26,8 +38,7 @@
 
   {% if plan_id %}
   <label for="run-select">Run</label>
-  <select id="run-select"
-          onchange="location.href='/?plan_id={{ plan_id }}&run_id=' + encodeURIComponent(this.value)">
+  <select id="run-select" onchange="selectRun(this.value)">
     <option value="">-- none --</option>
     {% for r in runs %}
     <option value="{{ r.run_id }}" {% if r.run_id == run_id %}selected{% endif %}>{{ r.run_id }}</option>
@@ -35,6 +46,35 @@
   </select>
   {% endif %}
 </div>
+
+<script>
+  // Build a shell URL preserving source/filter (and optionally the selected
+  // analysis / run), so filtering does not lose context.
+  function _filterParams() {
+    var p = new URLSearchParams();
+    var src = document.getElementById("src-select").value;
+    var q = document.getElementById("q-input").value.trim();
+    if (src && src !== "all") p.set("src", src);
+    if (q) p.set("q", q);
+    return p;
+  }
+  function applyFilter() {
+    var p = _filterParams();
+    {% if plan_id %}p.set("plan_id", {{ plan_id | tojson }});{% endif %}
+    location.href = "/?" + p.toString();
+  }
+  function selectStudy(key) {
+    var p = _filterParams();
+    if (key) p.set("plan_id", key);
+    location.href = "/?" + p.toString();
+  }
+  function selectRun(rid) {
+    var p = _filterParams();
+    {% if plan_id %}p.set("plan_id", {{ plan_id | tojson }});{% endif %}
+    if (rid) p.set("run_id", rid);
+    location.href = "/?" + p.toString();
+  }
+</script>
 
 <div id="state-strip"
      {% if plan_id %}hx-get="/view/state-strip/{{ plan_id }}{% if run_id %}?run_id={{ run_id }}{% endif %}" hx-trigger="every 8s" hx-swap="innerHTML"{% endif %}>

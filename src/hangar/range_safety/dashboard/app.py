@@ -126,6 +126,21 @@ async def shell(request):
     rm = _read_model()
     plan_id = request.query_params.get("plan_id") or None
     run_id = request.query_params.get("run_id") or None
+    src = request.query_params.get("src") or "all"
+    query = (request.query_params.get("q") or "").strip()
+
+    # Selector list: newest-first (sorted in list_studies), filtered by source
+    # and a case-insensitive substring on the id / label.
+    all_studies = rm.list_studies()
+    studies = all_studies
+    if src in ("omd", "sdk"):
+        studies = [s for s in studies if s.get("source") == src]
+    if query:
+        ql = query.lower()
+        studies = [s for s in studies
+                   if ql in (s.get("study_id") or "").lower()
+                   or ql in (s.get("label") or "").lower()]
+
     runs = rm.list_runs(plan_id) if plan_id else []
     # Default to the study's latest run so the run-scoped views (results,
     # plots) and the strip's executing link are reachable without a manual
@@ -133,7 +148,11 @@ async def shell(request):
     if plan_id and not run_id and runs:
         run_id = runs[0]["run_id"]
     ctx = {
-        "studies": rm.list_studies(),
+        "studies": studies,
+        "studies_total": len(all_studies),
+        "studies_shown": len(studies),
+        "src": src,
+        "q": query,
         "plan_id": plan_id,
         "run_id": run_id,
         "runs": runs,

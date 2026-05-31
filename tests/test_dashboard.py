@@ -212,6 +212,31 @@ def test_state_advances_as_process_moves():
     assert state_machine.infer_current_state(plan, dag)["current"] == "concluding"
 
 
+def test_compute_coverage_marks_states_populated_thin_absent():
+    # Settled requirements + plan body + a run, no assessment yet.
+    plan = _base_plan(
+        requirements=[{"id": "R1", "text": "x", "status": "open",
+                       "acceptance_criteria": [{"metric": "CL"}]}],
+        design_variables=[{"name": "twist_cp", "upper": 10.0}],
+        objective={"name": "fuelburn"},
+    )
+    dag = {"entities": [{"entity_id": "run-1", "entity_type": "run_record",
+                         "plan_id": "study-1", "version": 1}],
+           "activities": [], "edges": []}
+    cov = state_machine.compute_coverage(plan, dag)
+    assert cov["gather_requirements"] == "populated"
+    assert cov["planning"] == "populated"
+    assert cov["executing"] == "populated"
+    assert cov["verifying"] == "thin"      # a run but nothing assessed
+    assert cov["concluding"] == "absent"
+
+    # No requirements, no plan, no runs -> everything absent except as noted.
+    bare = state_machine.compute_coverage({}, {"entities": [], "activities": [], "edges": []})
+    assert bare["gather_requirements"] == "absent"
+    assert bare["executing"] == "absent"
+    assert bare["verifying"] == "absent"
+
+
 def test_transition_history_orders_and_labels_rerun():
     dag = {
         "entities": [
@@ -386,9 +411,11 @@ def test_app_view_fragments_render(isolate_omd_data):
     assert "/static/dashboard.js" in shell.text
     assert 'hx-get="/view/requirements/study-1"' in shell.text
 
-    # state strip: concluding (primary verified + assessment present)
+    # state strip: concluding (primary verified + assessment present), with
+    # the current-state class and the per-state coverage dots rendered.
     strip = client.get("/view/state-strip/study-1")
-    assert "state-node current" in strip.text and "Concluding" in strip.text
+    assert "Concluding" in strip.text
+    assert "current" in strip.text and "cov-dot" in strip.text
 
     # plan-scoped fragments
     reqs = client.get("/view/requirements/study-1")

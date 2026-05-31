@@ -86,6 +86,15 @@ a:hover { text-decoration: underline; }
   color: #e0a060;
 }
 .next-indicator { font-size: 11px; color: #6aa06a; margin-left: 8px; }
+
+/* per-state coverage dots (populated / thin / absent) */
+.cov-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 5px; background: #454a5e; vertical-align: middle; }
+.cov-populated .cov-dot, .cov-dot.cov-populated { background: #4cdf88; }
+.cov-thin .cov-dot, .cov-dot.cov-thin { background: #e0a060; }
+.cov-absent .cov-dot, .cov-dot.cov-absent { background: #454a5e; }
+.cov-legend { font-size: 10px; color: #6a7090; margin-left: 10px; }
+.cov-legend .cov-dot { margin-left: 8px; }
 .confidence { font-size: 11px; color: #888; margin-left: 8px; }
 
 /* -- main layout -- */

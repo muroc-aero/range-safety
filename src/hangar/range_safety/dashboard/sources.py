@@ -249,10 +249,24 @@ class SdkSessionSource:
 
     def get_state(self, session_id: str) -> dict:
         inferred = self._infer(session_id)
+        s = inferred["signals"]
+        # sdk coverage: requirements are runtime-only (not persisted) so Gather
+        # is absent; there is no structured plan document so Planning is thin;
+        # Concluding is not modelled yet. (See DESIGN_tool_integration TODOs.)
+        coverage = {
+            state_machine.GATHER_REQUIREMENTS: state_machine.ABSENT,
+            state_machine.PLANNING: state_machine.THIN,
+            state_machine.EXECUTING: (state_machine.POPULATED
+                                      if (s["n_tool_calls"] or s["n_runs"]) else state_machine.ABSENT),
+            state_machine.VERIFYING: (state_machine.POPULATED if s["n_decisions"]
+                                      else (state_machine.THIN if s["n_tool_calls"] else state_machine.ABSENT)),
+            state_machine.CONCLUDING: state_machine.ABSENT,
+        }
         return {
             "current": inferred["current"],
             "confidence": inferred["confidence"],
-            "signals": inferred["signals"],
+            "signals": s,
+            "coverage": coverage,
             "transitions": [],  # TODO: derive from tool_call seq + decisions
             "next": {
                 "forward_state": state_machine.next_forward_state(inferred["current"]),

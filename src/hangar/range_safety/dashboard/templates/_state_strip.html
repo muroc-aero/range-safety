@@ -11,15 +11,17 @@
     "verifying": "/view/reasoning/" ~ plan_id,
     "concluding": "/view/report/" ~ plan_id,
 } %}
+{% set coverage = (state.coverage if state else {}) or {} %}
 {% for s in machine.states %}
   {% set target = targets[s.id] %}
+  {% set cov = coverage.get(s.id, "absent") %}
   {% if target %}
-  <a class="state-node {% if state and s.id == state.current %}current{% endif %}"
+  <a class="state-node cov-{{ cov }} {% if state and s.id == state.current %}current{% endif %}"
      hx-get="{{ target }}" hx-target="#view" hx-push-url="false"
-     title="Load the {{ s.label }} view">{{ s.label }}</a>
+     title="Load the {{ s.label }} view ({{ cov }})"><span class="cov-dot"></span>{{ s.label }}</a>
   {% else %}
-  <span class="state-node disabled {% if state and s.id == state.current %}current{% endif %}"
-        title="No run recorded yet">{{ s.label }}</span>
+  <span class="state-node disabled cov-{{ cov }} {% if state and s.id == state.current %}current{% endif %}"
+        title="No run recorded yet ({{ cov }})"><span class="cov-dot"></span>{{ s.label }}</span>
   {% endif %}
   {% if not loop.last %}<span class="state-arrow">&rarr;</span>{% endif %}
 {% endfor %}
@@ -29,6 +31,11 @@
 {% if state.next and state.next.forward_state %}
 <span class="next-indicator">next &rarr; {{ state_labels.get(state.next.forward_state, state.next.forward_state) }}</span>
 {% endif %}
+<span class="cov-legend" title="Per-state coverage: how much data exists for each state">
+  <span class="cov-dot cov-populated"></span>populated
+  <span class="cov-dot cov-thin"></span>thin
+  <span class="cov-dot cov-absent"></span>absent
+</span>
 {% endif %}
 
 <div class="state-feedback">

@@ -177,6 +177,59 @@ def compute_signals(plan: dict, dag: dict) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# State coverage (how populated each state is, for the strip badges)
+# ---------------------------------------------------------------------------
+
+POPULATED = "populated"
+THIN = "thin"
+ABSENT = "absent"
+
+
+def compute_coverage(plan: dict, dag: dict) -> dict[str, str]:
+    """Per-state coverage for the dashboard strip.
+
+    Each of the five states is ``populated`` (has real data), ``thin`` (some
+    signal but the view is partial), or ``absent`` (nothing recorded for this
+    state yet). Derived from the same signals as the inference, so the strip
+    can show honestly which states are filled in. See DESIGN_tool_integration.
+    """
+    s = compute_signals(plan, dag)
+    requirements = (plan or {}).get("requirements") or []
+
+    if not requirements:
+        gather = ABSENT
+    elif s["requirements_settled"]:
+        gather = POPULATED
+    else:
+        gather = THIN
+
+    planning = POPULATED if s["has_plan_body"] else ABSENT
+    executing = POPULATED if s["n_run_records"] > 0 else ABSENT
+
+    if s["n_assessments"] > 0 or s["n_verify_edges"] > 0:
+        verifying = POPULATED
+    elif s["n_run_records"] > 0:
+        verifying = THIN
+    else:
+        verifying = ABSENT
+
+    if s["primary_requirements_terminal"] and s["n_assessments"] > 0:
+        concluding = POPULATED
+    elif s["n_assessments"] > 0:
+        concluding = THIN
+    else:
+        concluding = ABSENT
+
+    return {
+        GATHER_REQUIREMENTS: gather,
+        PLANNING: planning,
+        EXECUTING: executing,
+        VERIFYING: verifying,
+        CONCLUDING: concluding,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Current-state inference
 # ---------------------------------------------------------------------------
 
@@ -304,6 +357,7 @@ def get_state(plan: dict, dag: dict) -> dict:
         "current": inferred["current"],
         "confidence": inferred["confidence"],
         "signals": inferred["signals"],
+        "coverage": compute_coverage(plan, dag),
         "transitions": transition_history(plan, dag),
         "next": {
             "forward_state": next_forward_state(inferred["current"]),

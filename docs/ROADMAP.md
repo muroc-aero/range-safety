@@ -125,7 +125,10 @@ design and the TODO backlog; this is the scheduled order.
       state. Add an sdk-session fixture for the sdk path.
 - [ ] **Skills follow-up.** File TODOs on each tool's skill to record the
       pieces that leave states thin (requirements at gather, decisions at
-      verify), so real agentic runs populate the dashboard.
+      verify, and a **conclusion artifact** at conclude), so real agentic runs
+      populate the dashboard. The conclusion mechanism (a conclusion entity
+      tied to the chosen result + the requirements it resolves) is specified
+      in `DESIGN_state_machine.md`.
 
 ## Phase 3 -- Deploy
 

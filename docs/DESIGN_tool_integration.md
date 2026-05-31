@@ -167,5 +167,12 @@ this version).
 - [ ] Skills: record the currently-missing pieces (e.g. OAS/OCP/pyC skills
       call `set_requirements` at gather and `log_decision` at verify) so the
       thin states populate from real agentic runs.
+- [ ] Concluding mechanism: agents record a **conclusion artifact** at the
+      concluding step (a `decision`/`conclusion` entity `wasDerivedFrom` the
+      chosen result, with `satisfies`/`violates`/`justifies` edges to the
+      requirements + headline metrics + narrative). The Report view aggregates
+      it and Concluding coverage becomes `populated` from it (today it is only
+      inferred). Add a "record the conclusion" step to each tool's skill. See
+      `DESIGN_state_machine.md` ("How an agent records a conclusion").
 - [ ] Multi-source study key + shell selector aggregating all sources.
 - [ ] Cross-tool combined study view via `cross_references`.

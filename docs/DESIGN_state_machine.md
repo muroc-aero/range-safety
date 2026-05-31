@@ -88,6 +88,32 @@ Because state is derived, the dashboard can also show a **confidence**
 for the inferred current state and let a human pin it explicitly (a
 Phase 4 write-back hook).
 
+## How an agent records a conclusion
+
+Concluding must be something an agent (or human) actively *does*, not only
+something inferred. The mechanism reuses the existing provenance vocabulary,
+so it is additive:
+
+- The agent records a **conclusion artifact** at the concluding step: a
+  provenance entity (a `decision` with `stage = "concluding"`, or a dedicated
+  `conclusion` entity type) that is **tied to the result(s) it is based on**
+  (`wasDerivedFrom` the chosen / final `run_record`, and/or referencing the
+  result artifact ids) and **tied to the requirements it resolves**
+  (`satisfies` / `violates` / `justifies` edges to the `requirement`
+  entities). It carries the headline outcome (key metrics), the per-primary
+  -requirement verdict, and a short narrative.
+- The **Report view** aggregates these conclusion artifacts alongside the
+  requirements scorecard and the analysis-plan phases; Concluding **coverage**
+  is `populated` once a conclusion artifact exists (today it is inferred from
+  terminal requirements + an assessment, which is weaker).
+- This parallels the verifying-stage linkage (results -> reasoning ->
+  requirements) and is recorded the same way: the per-tool **skills** add a
+  "record the conclusion" step at the end of the workflow (TODO in
+  `DESIGN_tool_integration.md` and the skills). For tools that only emit
+  results artifacts, the simplest form is a conclusion entity that
+  `wasDerivedFrom` the final result artifact, so "concluding" is just
+  "an agent recorded what the results mean for the requirements."
+
 ## Transition events
 
 A transition is recorded with: `from_state`, `to_state`, `timestamp`,

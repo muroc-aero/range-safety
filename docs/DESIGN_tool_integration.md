@@ -167,12 +167,18 @@ this version).
 - [ ] Skills: record the currently-missing pieces (e.g. OAS/OCP/pyC skills
       call `set_requirements` at gather and `log_decision` at verify) so the
       thin states populate from real agentic runs.
-- [ ] Concluding mechanism: agents record a **conclusion artifact** at the
-      concluding step (a `decision`/`conclusion` entity `wasDerivedFrom` the
-      chosen result, with `satisfies`/`violates`/`justifies` edges to the
-      requirements + headline metrics + narrative). The Report view aggregates
-      it and Concluding coverage becomes `populated` from it (today it is only
-      inferred). Add a "record the conclusion" step to each tool's skill. See
-      `DESIGN_state_machine.md` ("How an agent records a conclusion").
+- Concluding mechanism: agents record a **conclusion artifact** at the
+      concluding step (a `conclusion` entity `wasDerivedFrom` the chosen result,
+      with `satisfies`/`violates` edges to the requirements + headline metrics +
+      narrative). The Report view aggregates it and Concluding coverage becomes
+      `populated` from it. See `DESIGN_state_machine.md` ("How an agent records a
+      conclusion").
+  - [x] **omd**: `record_conclusion` + `omd-cli conclude` auto-derive
+        per-requirement verdicts from the acceptance criteria, write the
+        `conclusion` entity + edges; state machine, Report view, and the
+        `omd-cli-guide` skill updated.
+  - [ ] **sdk** (oas/ocp/pyc): a `record_conclusion` tool writing a
+        `decision`-backed conclusion, the dashboard sdk source reading it, and
+        the per-tool skills' closing step.
 - [ ] Multi-source study key + shell selector aggregating all sources.
 - [ ] Cross-tool combined study view via `cross_references`.

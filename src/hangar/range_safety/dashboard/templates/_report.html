@@ -10,6 +10,50 @@
   {% endfor %}
 </div>
 
+{% if data.conclusions %}
+<div class="group-label">Conclusion</div>
+{% for c in data.conclusions %}
+{% set vclass = 'verified' if c.verdict == 'meets' else ('violated' if c.verdict == 'fails' else 'waived') %}
+<div class="card">
+  <h3>{{ c.run_id or c.id }}
+    <span class="chip status-{{ vclass }}">{{ (c.verdict or 'partial')|upper }}</span>
+  </h3>
+  {% if c.narrative %}<div style="margin-bottom:6px">{{ c.narrative }}</div>{% endif %}
+  {% if c.metrics %}
+  <div class="headline-grid">
+    {% for m in c.metrics %}
+    <div class="metric{{ ' metric-objective' if m.role == 'objective' else '' }}">
+      <div class="metric-label">{{ m.label }}</div>
+      <div class="metric-value mono">{{ '%.4g' % m.value if m.value is number else m.value }}{% if m.unit %} <span class="metric-unit">{{ m.unit }}</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if c.requirements %}
+  <table class="grid" style="margin-top:8px">
+    <thead><tr><th style="width:8%">ID</th><th style="width:42%">Requirement</th><th style="width:12%">Verdict</th><th>Criteria</th></tr></thead>
+    <tbody>
+    {% for r in c.requirements %}
+      {% set rclass = 'verified' if r.verdict == 'satisfies' else ('violated' if r.verdict == 'violates' else 'open') %}
+      <tr>
+        <td class="mono">{{ r.id }}</td>
+        <td>{{ r.text }}</td>
+        <td><span class="chip status-{{ rclass }}">{{ r.verdict }}</span></td>
+        <td>
+          {% for cr in r.criteria %}
+            <div class="mono" style="font-size:11px">{{ cr.metric }} {{ cr.comparator }} {{ cr.threshold }}
+              <span class="muted">(actual {{ '%.4g' % cr.actual if cr.actual is number else 'n/a' }})</span></div>
+          {% else %}<span class="muted">&mdash;</span>{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
 <div class="group-label">Analysis phases</div>
 {% if data.phases %}
 <table class="grid">

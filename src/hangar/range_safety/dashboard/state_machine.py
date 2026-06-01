@@ -130,6 +130,7 @@ def compute_signals(plan: dict, dag: dict) -> dict[str, Any]:
 
     run_records = _entities_of_type(dag, "run_record")
     assessments = _entities_of_type(dag, "assessment")
+    conclusions = _entities_of_type(dag, "conclusion")
 
     edges = dag.get("edges") or []
     verify_edges = [e for e in edges if e.get("relation") in _VERIFY_RELATIONS]
@@ -167,6 +168,7 @@ def compute_signals(plan: dict, dag: dict) -> dict[str, Any]:
         "has_plan_body": has_plan_body,
         "n_run_records": len(run_records),
         "n_assessments": len(assessments),
+        "n_conclusions": len(conclusions),
         "n_verify_edges": len(verify_edges),
         "n_satisfies": satisfies,
         "n_violates": violates,
@@ -213,7 +215,9 @@ def compute_coverage(plan: dict, dag: dict) -> dict[str, str]:
     else:
         verifying = ABSENT
 
-    if s["primary_requirements_terminal"] and s["n_assessments"] > 0:
+    # A recorded conclusion artifact is the strong, explicit signal; the older
+    # "terminal requirements + assessment" inference is kept as a fallback.
+    if s["n_conclusions"] > 0 or (s["primary_requirements_terminal"] and s["n_assessments"] > 0):
         concluding = POPULATED
     elif s["n_assessments"] > 0:
         concluding = THIN
@@ -242,7 +246,9 @@ def infer_current_state(plan: dict, dag: dict) -> dict:
     """
     s = compute_signals(plan, dag)
 
-    if s["primary_requirements_terminal"] and s["n_assessments"] > 0:
+    if s["n_conclusions"] > 0:
+        current, confidence = CONCLUDING, 0.95
+    elif s["primary_requirements_terminal"] and s["n_assessments"] > 0:
         current, confidence = CONCLUDING, 0.9
     elif s["n_run_records"] > 0 and (s["n_assessments"] > 0 or s["n_verify_edges"] > 0):
         current, confidence = VERIFYING, 0.8

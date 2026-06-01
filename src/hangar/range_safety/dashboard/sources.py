@@ -431,7 +431,7 @@ class SdkSessionSource:
         n_req = len(self._sdb.get_requirements(session_id))
         return {"plan_id": session_id, "version": None, "current_state": self._infer(session_id)["current"],
                 "scorecard": {"verified": 0, "violated": 0, "waived": 0, "open": n_req, "draft": 0},
-                "phases": [], "replan_triggers": [], "decisions": []}
+                "phases": [], "conclusions": [], "replan_triggers": [], "decisions": []}
 
     def view_results(self, run_id: str) -> dict:
         artifact = self._store.get(run_id) or {}

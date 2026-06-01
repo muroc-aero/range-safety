@@ -7,6 +7,7 @@ sessions.db / ArtifactStore are isolated.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -179,6 +180,78 @@ def test_sdk_requirements_only_session_infers_gathering(isolate_omd_data):
     state = SdkSessionSource().get_state(sid)
     assert state["current"] == state_machine.GATHER_REQUIREMENTS
     assert state["coverage"][state_machine.GATHER_REQUIREMENTS] == state_machine.POPULATED
+
+
+# ---------------------------------------------------------------------------
+# Conclusion artifacts (concluding stage)
+# ---------------------------------------------------------------------------
+
+
+def test_conclusion_signal_drives_coverage_and_inference():
+    """A conclusion entity alone makes Concluding populated and inferred."""
+    plan = {"requirements": [{"id": "R1", "priority": "primary", "status": "open"}]}
+    dag = {
+        "entities": [{"entity_type": "conclusion", "entity_id": "conclusion-r1"}],
+        "edges": [], "activities": [],
+    }
+    assert state_machine.compute_signals(plan, dag)["n_conclusions"] == 1
+    assert state_machine.compute_coverage(plan, dag)[state_machine.CONCLUDING] == \
+        state_machine.POPULATED
+    inferred = state_machine.infer_current_state(plan, dag)
+    assert inferred["current"] == state_machine.CONCLUDING
+    assert inferred["confidence"] >= 0.9
+
+
+def test_omd_conclusion_end_to_end(isolate_omd_data):
+    """record_conclusion populates Concluding, the report, and the requirement edge."""
+    from hangar.omd.run import record_conclusion
+    from hangar.range_safety.dashboard.read_model import ReadModel
+
+    tmp = isolate_omd_data
+    plan = {
+        "metadata": {"id": "wing-opt", "name": "Wing", "version": 1},
+        "components": [{"id": "wing", "type": "oas/AeroPoint", "config": {"surfaces": []}}],
+        "requirements": [
+            {"id": "R1", "text": "cruise lift", "priority": "primary",
+             "acceptance_criteria": [{"metric": "CL", "comparator": ">=", "threshold": 0.4}]},
+        ],
+    }
+    plan_dir = tmp / "plans" / "wing-opt"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "v1.yaml").write_text(yaml.safe_dump(plan))
+
+    init_analysis_db(tmp / "analysis.db")
+    plan_entity = "wing-opt/v1"
+    record_entity(plan_entity, "plan", "test", plan_id="wing-opt", version=1)
+    record_entity(f"{plan_entity}/req/R1", "requirement", "test", plan_id="wing-opt",
+                  version=1, metadata=json.dumps(plan["requirements"][0]))
+    record_entity("run-1", "run_record", "test", plan_id="wing-opt")
+    record_run_case("run-1", 0, "final", {"CL": 0.5})
+
+    rm = ReadModel()
+    # Before: no conclusion artifact, requirement still open -> not concluding.
+    assert rm.get_state("wing-opt")["coverage"][state_machine.CONCLUDING] != \
+        state_machine.POPULATED
+
+    result = record_conclusion("run-1", plan, "wing-opt", narrative="meets cruise lift")
+    assert result["verdict"] == "meets"
+
+    # After: Concluding populated + inferred current.
+    state = rm.get_state("wing-opt")
+    assert state["current"] == state_machine.CONCLUDING
+    assert state["coverage"][state_machine.CONCLUDING] == state_machine.POPULATED
+
+    # Report surfaces the conclusion with its verdict and per-requirement breakdown.
+    report = rm.view_report("wing-opt")
+    assert len(report["conclusions"]) == 1
+    c = report["conclusions"][0]
+    assert c["verdict"] == "meets" and c["narrative"] == "meets cruise lift"
+    assert c["requirements"][0]["verdict"] == "satisfies"
+
+    # The satisfies edge surfaces as a verification edge on the requirement.
+    reqs = rm.view_requirements("wing-opt")["requirements"]
+    rels = {e["relation"] for e in reqs[0]["verification_edges"]}
+    assert "satisfies" in rels
 
 
 # ---------------------------------------------------------------------------

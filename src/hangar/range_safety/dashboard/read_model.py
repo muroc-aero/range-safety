@@ -53,6 +53,9 @@ def _reasoning_label(entity_id: str, entity_type: str, meta: dict) -> str:
         return f"{entity_id}" + (f"\n[{status}]" if status else "")
     if entity_type == "assessment":
         return "assessment"
+    if entity_type == "conclusion":
+        verdict = meta.get("verdict")
+        return "conclusion" + (f"\n[{verdict}]" if verdict else "")
     return _short_id(entity_id)
 
 
@@ -149,14 +152,22 @@ class ReadModel:
         plan = self._plan(plan_id, version)
         dag = self._dag(plan_id)
 
-        # Index verify edges by the requirement they target.
+        # Index verify edges by the requirement they target. Requirement
+        # entities are recorded as ".../req/<id>", but plans look requirements
+        # up by their bare id, so index under both the full entity id and the
+        # trailing <id> (this is what lets conclusion satisfies/violates edges,
+        # which point at the entity id, surface against the plan requirement).
         edges_by_req: dict[str, list[dict]] = {}
         for edge in dag.get("edges") or []:
             if edge.get("relation") in _VERIFY_RELATIONS:
-                edges_by_req.setdefault(edge.get("object_id"), []).append({
+                obj = edge.get("object_id") or ""
+                entry = {
                     "relation": edge.get("relation"),
                     "subject_id": edge.get("subject_id"),
-                })
+                }
+                edges_by_req.setdefault(obj, []).append(entry)
+                if "/req/" in obj:
+                    edges_by_req.setdefault(obj.split("/req/")[-1], []).append(entry)
 
         requirements = []
         for req in plan.get("requirements") or []:
@@ -522,7 +533,8 @@ class ReadModel:
         narrows the subgraph to that node's neighborhood.
         """
         dag = self._dag(plan_id)
-        relevant_types = {"run_record", "assessment", "decision", "requirement"}
+        relevant_types = {"run_record", "assessment", "decision", "requirement",
+                          "conclusion"}
         # Cytoscape-native nodes carrying the normalized `kind` style key, so
         # the same dashboard renderer/style used for the plan graph applies.
         nodes = []
@@ -537,6 +549,7 @@ class ReadModel:
                     "type": "entity",
                     "entity_type": etype,
                     "status": meta.get("status"),
+                    "verdict": meta.get("verdict"),
                     "metadata": meta,
                 }})
         node_ids = {n["data"]["id"] for n in nodes}
@@ -608,12 +621,35 @@ class ReadModel:
             {"id": p.get("id"), "name": p.get("name"), "mode": p.get("mode")}
             for p in analysis_plan.get("phases") or []
         ]
+
+        # Conclusion artifacts (concluding stage): an agent's recorded verdict on
+        # what a chosen run means for the requirements. Newest first.
+        conclusions = []
+        for e in dag.get("entities") or []:
+            if e.get("entity_type") != "conclusion":
+                continue
+            try:
+                meta = json.loads(e.get("metadata") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            conclusions.append({
+                "id": e.get("entity_id"),
+                "created_at": e.get("created_at"),
+                "run_id": meta.get("run_id"),
+                "verdict": meta.get("verdict"),
+                "narrative": meta.get("narrative"),
+                "metrics": meta.get("metrics") or [],
+                "requirements": meta.get("requirements") or [],
+            })
+        conclusions.sort(key=lambda c: c.get("created_at") or "", reverse=True)
+
         return {
             "plan_id": plan_id,
             "version": version if version is not None else latest_version(self.plan_store, plan_id),
             "current_state": state["current"],
             "scorecard": scorecard,
             "phases": phases,
+            "conclusions": conclusions,
             "replan_triggers": state_machine.replan_triggers(plan),
             "decisions": plan.get("decisions", []),
         }

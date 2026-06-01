@@ -135,9 +135,50 @@ def test_sdk_session_source_views(isolate_omd_data):
     assert results["final"]["CL"] == 0.52
     assert "planform" in src.plot_types(run_id)  # aero analysis_type
 
-    # Thin-by-design views.
+    # No requirements were set for this session, so the view stays empty.
     assert src.view_requirements(sid)["requirements"] == []
     assert src.view_plan_diff(sid)["changes"] == []
+
+
+def test_sdk_persisted_requirements_replay(isolate_omd_data):
+    """Requirements persisted by set_requirements replay into the Gather view."""
+    from hangar.sdk.provenance import db as sdb
+
+    sid, _ = _seed_sdk_session(isolate_omd_data)
+    sdb.record_requirements(sid, [
+        {"path": "CL", "operator": ">=", "value": 0.4, "label": "min_CL"},
+        {"path": "surfaces.wing.failure", "operator": "<", "value": 1.0},
+    ])
+    src = SdkSessionSource()
+
+    reqs = src.view_requirements(sid)["requirements"]
+    assert len(reqs) == 2
+    # Labelled requirement keeps its label as id/text; criteria carry the assertion.
+    assert reqs[0]["id"] == "min_CL"
+    assert reqs[0]["acceptance_criteria"][0] == {
+        "metric": "CL", "comparator": ">=", "threshold": 0.4}
+    # Unlabelled requirement falls back to a positional id and expression text.
+    assert reqs[1]["id"] == "R2"
+    assert reqs[1]["status"] == "open" and reqs[1]["priority"] is None
+
+    # Gather-Requirements coverage flips to populated; report counts them open.
+    coverage = src.get_state(sid)["coverage"]
+    assert coverage[state_machine.GATHER_REQUIREMENTS] == state_machine.POPULATED
+    assert src.view_report(sid)["scorecard"]["open"] == 2
+
+
+def test_sdk_requirements_only_session_infers_gathering(isolate_omd_data):
+    """A session with requirements but no tool calls is in Gather Requirements."""
+    from hangar.sdk.provenance import db as sdb
+
+    sdb.init_db(None)
+    sid = "sess-req-only"
+    sdb.record_session(sid)
+    sdb.record_requirements(sid, [{"path": "CL", "operator": ">=", "value": 0.4}])
+
+    state = SdkSessionSource().get_state(sid)
+    assert state["current"] == state_machine.GATHER_REQUIREMENTS
+    assert state["coverage"][state_machine.GATHER_REQUIREMENTS] == state_machine.POPULATED
 
 
 # ---------------------------------------------------------------------------

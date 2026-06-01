@@ -309,7 +309,9 @@ class SdkSessionSource:
         n_tool = sum(1 for n in graph["nodes"] if n.get("type") == "tool_call")
         n_dec = sum(1 for n in graph["nodes"] if n.get("type") == "decision")
         n_runs = len(self.list_runs(session_id))
-        return {"n_tool_calls": n_tool, "n_decisions": n_dec, "n_runs": n_runs}
+        n_req = len(self._sdb.get_requirements(session_id))
+        return {"n_tool_calls": n_tool, "n_decisions": n_dec, "n_runs": n_runs,
+                "n_requirements": n_req}
 
     def _infer(self, session_id: str) -> dict:
         s = self._signals(session_id)
@@ -317,6 +319,9 @@ class SdkSessionSource:
             current, conf = state_machine.VERIFYING, 0.6
         elif s["n_tool_calls"] > 0 or s["n_runs"] > 0:
             current, conf = state_machine.EXECUTING, 0.6
+        elif s["n_requirements"] > 0:
+            # Requirements set but nothing executed yet -> still gathering.
+            current, conf = state_machine.GATHER_REQUIREMENTS, 0.5
         else:
             current, conf = state_machine.PLANNING, 0.4
         return {"current": current, "confidence": conf, "signals": s}
@@ -324,11 +329,13 @@ class SdkSessionSource:
     def get_state(self, session_id: str) -> dict:
         inferred = self._infer(session_id)
         s = inferred["signals"]
-        # sdk coverage: requirements are runtime-only (not persisted) so Gather
-        # is absent; there is no structured plan document so Planning is thin;
-        # Concluding is not modelled yet. (See DESIGN_tool_integration TODOs.)
+        # sdk coverage: requirements set via set_requirements / configure_session
+        # are now persisted, so Gather is populated once any exist; there is no
+        # structured plan document so Planning is thin; Concluding is not
+        # modelled yet. (See DESIGN_tool_integration TODOs.)
         coverage = {
-            state_machine.GATHER_REQUIREMENTS: state_machine.ABSENT,
+            state_machine.GATHER_REQUIREMENTS: (state_machine.POPULATED
+                                                if s["n_requirements"] else state_machine.ABSENT),
             state_machine.PLANNING: state_machine.THIN,
             state_machine.EXECUTING: (state_machine.POPULATED
                                       if (s["n_tool_calls"] or s["n_runs"]) else state_machine.ABSENT),
@@ -356,9 +363,33 @@ class SdkSessionSource:
         return self._sdb.build_session_elements(session_id)
 
     def view_requirements(self, session_id: str, version=None) -> dict:
-        # Thin: sdk requirements are runtime-only (set_requirements) and not
-        # persisted, so there is nothing to replay. TODO: persist them.
-        return {"plan_id": session_id, "requirements": []}
+        # sdk requirements ({path, operator, value, label}) are now persisted by
+        # set_requirements / configure_session, so they replay here. They map
+        # onto the same render shape as omd requirements: each becomes one
+        # acceptance criterion. sdk has no priority taxonomy (rendered under
+        # "unspecified priority") and no verification edges yet, so status is
+        # "open" until conclusion artifacts link a verdict (see Concluding TODO).
+        reqs = self._sdb.get_requirements(session_id)
+        out = []
+        for i, r in enumerate(reqs):
+            path = r.get("path") or ""
+            op = r.get("operator") or ""
+            val = r.get("value")
+            label = r.get("label")
+            expr = f"{path} {op} {val}".strip()
+            out.append({
+                "id": label or f"R{i + 1}",
+                "text": label or expr,
+                "type": None,
+                "priority": None,
+                "status": "open",
+                "acceptance_criteria": [
+                    {"metric": path, "comparator": op, "threshold": val},
+                ],
+                "traces_to": [],
+                "verification_edges": [],
+            })
+        return {"plan_id": session_id, "requirements": out}
 
     def view_plan(self, session_id: str, version=None) -> dict:
         # No structured plan document for an sdk session; surface the
@@ -395,9 +426,11 @@ class SdkSessionSource:
         return {"plan_id": session_id, "focus": focus, "graph": self._session_graph(session_id)}
 
     def view_report(self, session_id: str, version=None) -> dict:
-        # Thin until requirements/assessments are persisted for sdk sessions.
+        # Requirements now replay; they have no per-requirement verdict yet
+        # (that arrives with conclusion artifacts), so all count as "open".
+        n_req = len(self._sdb.get_requirements(session_id))
         return {"plan_id": session_id, "version": None, "current_state": self._infer(session_id)["current"],
-                "scorecard": {"verified": 0, "violated": 0, "waived": 0, "open": 0, "draft": 0},
+                "scorecard": {"verified": 0, "violated": 0, "waived": 0, "open": n_req, "draft": 0},
                 "phases": [], "replan_triggers": [], "decisions": []}
 
     def view_results(self, run_id: str) -> dict:

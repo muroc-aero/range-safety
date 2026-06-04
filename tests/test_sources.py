@@ -168,6 +168,47 @@ def test_sdk_persisted_requirements_replay(isolate_omd_data):
     assert src.view_report(sid)["scorecard"]["open"] == 2
 
 
+def test_sdk_conclusion_end_to_end(isolate_omd_data):
+    """record_conclusion flips Concluding, scores the report, and verdicts replay."""
+    from hangar.sdk.provenance import db as sdb
+    from hangar.sdk.provenance.conclusion import record_conclusion
+
+    sid, run_id = _seed_sdk_session(isolate_omd_data)
+    sdb.record_requirements(sid, [
+        {"path": "CL", "operator": ">=", "value": 0.4, "label": "min_CL"},
+        {"path": "CD", "operator": "<", "value": 0.005, "label": "max_CD"},
+    ])
+    src = SdkSessionSource()
+
+    # Before: no conclusion -> not concluding, requirements open.
+    assert src.get_state(sid)["coverage"][state_machine.CONCLUDING] == state_machine.ABSENT
+
+    # CL 0.52 >= 0.4 passes; CD 0.011 < 0.005 fails -> overall "fails".
+    record_conclusion(sid, run_id, {"CL": 0.52, "CD": 0.011}, narrative="cruise check")
+
+    state = src.get_state(sid)
+    assert state["current"] == state_machine.CONCLUDING
+    assert state["coverage"][state_machine.CONCLUDING] == state_machine.POPULATED
+
+    # Requirements view carries per-requirement verdicts.
+    by_id = {r["id"]: r for r in src.view_requirements(sid)["requirements"]}
+    assert by_id["min_CL"]["status"] == "verified"
+    assert by_id["max_CD"]["status"] == "violated"
+
+    # Report scores and surfaces the conclusion with its overall verdict.
+    report = src.view_report(sid)
+    assert report["scorecard"]["verified"] == 1
+    assert report["scorecard"]["violated"] == 1
+    assert len(report["conclusions"]) == 1
+    c = report["conclusions"][0]
+    assert c["run_id"] == run_id and c["verdict"] == "fails"
+    assert {m["name"] for m in c["metrics"]} == {"CL", "CD"}
+
+    # Selector (cheap path) also reflects concluding.
+    sel = {s["study_id"]: s["current_state"] for s in src.list_studies()}
+    assert sel[sid] == state_machine.CONCLUDING
+
+
 def test_sdk_requirements_only_session_infers_gathering(isolate_omd_data):
     """A session with requirements but no tool calls is in Gather Requirements."""
     from hangar.sdk.provenance import db as sdb

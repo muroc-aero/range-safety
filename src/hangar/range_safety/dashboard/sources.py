@@ -49,6 +49,9 @@ _SDK_UNITS = {
     "TSFC": "lbm/hr/lbf", "Fn": "lbf", "thrust": "lbf",
 }
 
+# Conclusion per-requirement verdict -> requirements-view status / scorecard key.
+_VERDICT_STATUS = {"satisfies": "verified", "violates": "violated", "open": "open"}
+
 
 def _sdk_headline(results: dict) -> list[dict]:
     """Headline metrics from an sdk envelope's already-clean named scalars.
@@ -262,7 +265,9 @@ class SdkSessionSource:
     # -- enumeration -------------------------------------------------------
 
     @staticmethod
-    def _state_from_counts(n_tool: int, n_dec: int) -> str:
+    def _state_from_counts(n_tool: int, n_dec: int, n_concl: int = 0) -> str:
+        if n_concl > 0:
+            return state_machine.CONCLUDING
         if n_dec > 0:
             return state_machine.VERIFYING
         if n_tool > 0:
@@ -282,7 +287,8 @@ class SdkSessionSource:
                 "label": s.get("project") or sid,
                 "version": None,
                 "current_state": self._state_from_counts(
-                    s.get("tool_call_count", 0), s.get("decision_count", 0)),
+                    s.get("tool_call_count", 0), s.get("decision_count", 0),
+                    s.get("conclusion_count", 0)),
                 "source": self.name,
                 "updated": s.get("started_at") or "",
             })
@@ -304,18 +310,26 @@ class SdkSessionSource:
 
     # -- state -------------------------------------------------------------
 
+    def _conclusion(self, session_id: str) -> dict | None:
+        """The latest recorded conclusion payload for this session, or None."""
+        return self._sdb.get_conclusion(session_id)
+
     def _signals(self, session_id: str) -> dict:
         graph = self._sdb.get_session_graph(session_id)
         n_tool = sum(1 for n in graph["nodes"] if n.get("type") == "tool_call")
         n_dec = sum(1 for n in graph["nodes"] if n.get("type") == "decision")
         n_runs = len(self.list_runs(session_id))
         n_req = len(self._sdb.get_requirements(session_id))
+        n_concl = 1 if self._conclusion(session_id) else 0
         return {"n_tool_calls": n_tool, "n_decisions": n_dec, "n_runs": n_runs,
-                "n_requirements": n_req}
+                "n_requirements": n_req, "n_conclusions": n_concl}
 
     def _infer(self, session_id: str) -> dict:
         s = self._signals(session_id)
-        if s["n_decisions"] > 0:
+        if s["n_conclusions"] > 0:
+            # A recorded conclusion is the strong, explicit "concluding" signal.
+            current, conf = state_machine.CONCLUDING, 0.95
+        elif s["n_decisions"] > 0:
             current, conf = state_machine.VERIFYING, 0.6
         elif s["n_tool_calls"] > 0 or s["n_runs"] > 0:
             current, conf = state_machine.EXECUTING, 0.6
@@ -331,8 +345,8 @@ class SdkSessionSource:
         s = inferred["signals"]
         # sdk coverage: requirements set via set_requirements / configure_session
         # are now persisted, so Gather is populated once any exist; there is no
-        # structured plan document so Planning is thin; Concluding is not
-        # modelled yet. (See DESIGN_tool_integration TODOs.)
+        # structured plan document so Planning is thin; Concluding is populated
+        # once record_conclusion writes a conclusion artifact.
         coverage = {
             state_machine.GATHER_REQUIREMENTS: (state_machine.POPULATED
                                                 if s["n_requirements"] else state_machine.ABSENT),
@@ -341,7 +355,8 @@ class SdkSessionSource:
                                       if (s["n_tool_calls"] or s["n_runs"]) else state_machine.ABSENT),
             state_machine.VERIFYING: (state_machine.POPULATED if s["n_decisions"]
                                       else (state_machine.THIN if s["n_tool_calls"] else state_machine.ABSENT)),
-            state_machine.CONCLUDING: state_machine.ABSENT,
+            state_machine.CONCLUDING: (state_machine.POPULATED
+                                       if s["n_conclusions"] else state_machine.ABSENT),
         }
         return {
             "current": inferred["current"],
@@ -370,6 +385,7 @@ class SdkSessionSource:
         # "unspecified priority") and no verification edges yet, so status is
         # "open" until conclusion artifacts link a verdict (see Concluding TODO).
         reqs = self._sdb.get_requirements(session_id)
+        verdicts = self._requirement_verdicts(session_id)
         out = []
         for i, r in enumerate(reqs):
             path = r.get("path") or ""
@@ -377,19 +393,43 @@ class SdkSessionSource:
             val = r.get("value")
             label = r.get("label")
             expr = f"{path} {op} {val}".strip()
+            rid = label or f"R{i + 1}"
+            # A recorded conclusion supplies an auto-derived verdict per
+            # requirement (matched by label, then by path); without one the
+            # requirement stays "open".
+            verdict = verdicts.get(rid) or verdicts.get(path)
+            status = _VERDICT_STATUS.get(verdict, "open")
+            edges = ([{"relation": verdict, "subject_id": "conclusion"}]
+                     if verdict in ("satisfies", "violates") else [])
             out.append({
-                "id": label or f"R{i + 1}",
+                "id": rid,
                 "text": label or expr,
                 "type": None,
                 "priority": None,
-                "status": "open",
+                "status": status,
                 "acceptance_criteria": [
                     {"metric": path, "comparator": op, "threshold": val},
                 ],
                 "traces_to": [],
-                "verification_edges": [],
+                "verification_edges": edges,
             })
         return {"plan_id": session_id, "requirements": out}
+
+    def _requirement_verdicts(self, session_id: str) -> dict:
+        """Map requirement id/path -> verdict from the latest conclusion, if any."""
+        concl = self._conclusion(session_id)
+        if not concl:
+            return {}
+        out: dict = {}
+        for r in concl.get("requirements") or []:
+            verdict = r.get("verdict")
+            if r.get("id"):
+                out[r["id"]] = verdict
+            for crit in r.get("criteria") or []:
+                metric = crit.get("metric")
+                if metric:
+                    out.setdefault(metric, verdict)
+        return out
 
     def view_plan(self, session_id: str, version=None) -> dict:
         # No structured plan document for an sdk session; surface the
@@ -426,12 +466,37 @@ class SdkSessionSource:
         return {"plan_id": session_id, "focus": focus, "graph": self._session_graph(session_id)}
 
     def view_report(self, session_id: str, version=None) -> dict:
-        # Requirements now replay; they have no per-requirement verdict yet
-        # (that arrives with conclusion artifacts), so all count as "open".
-        n_req = len(self._sdb.get_requirements(session_id))
-        return {"plan_id": session_id, "version": None, "current_state": self._infer(session_id)["current"],
-                "scorecard": {"verified": 0, "violated": 0, "waived": 0, "open": n_req, "draft": 0},
-                "phases": [], "conclusions": [], "replan_triggers": [], "decisions": []}
+        # Requirements replay; a recorded conclusion supplies per-requirement
+        # verdicts (satisfies/violates/open) and the overall narrative. Without
+        # one, every requirement counts as "open".
+        reqs = self._sdb.get_requirements(session_id)
+        verdicts = self._requirement_verdicts(session_id)
+        scorecard = {"verified": 0, "violated": 0, "waived": 0, "open": 0, "draft": 0}
+        for i, r in enumerate(reqs):
+            rid = r.get("label") or f"R{i + 1}"
+            verdict = verdicts.get(rid) or verdicts.get(r.get("path") or "")
+            scorecard[_VERDICT_STATUS.get(verdict, "open")] += 1
+
+        concl = self._conclusion(session_id)
+        conclusions = []
+        if concl:
+            conclusions.append({
+                "id": concl.get("conclusion_id"),
+                "created_at": concl.get("created_at"),
+                "run_id": concl.get("run_id"),
+                "verdict": concl.get("verdict"),
+                "narrative": concl.get("narrative"),
+                # Stored metrics are a {name: value} snapshot; format to the same
+                # headline shape the omd report uses.
+                "metrics": _sdk_headline(concl.get("metrics") or {}),
+                "requirements": concl.get("requirements") or [],
+            })
+
+        return {"plan_id": session_id, "version": None,
+                "current_state": self._infer(session_id)["current"],
+                "scorecard": scorecard,
+                "phases": [], "conclusions": conclusions,
+                "replan_triggers": [], "decisions": []}
 
     def view_results(self, run_id: str) -> dict:
         artifact = self._store.get(run_id) or {}

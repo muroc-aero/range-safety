@@ -5,6 +5,44 @@ dashboard ships in this repo (`range-safety`); it consumes read-only
 contracts from `the-hangar`. The boundary inventory lives in
 `the-hangar` at `docs/hangar-range-safety-boundary.md`.
 
+## Current status (2026-06-08)
+
+The dashboard is built and serving all five stages for both provenance
+patterns (omd plans and sdk sessions). What's done vs. what's left:
+
+**Done.** Phase 0 (repo extracted to private `muroc-aero/range-safety`,
+consumed as a submodule under `the-hangar/packages/range-safety`), Phases 1-2
+(state machine, read model, six views), Phase 2.5 (`Source` adapter seam:
+`OmdSource` + `SdkSessionSource`, shared graph builders, plot dispatch by
+origin, StateCoverage badges, replay tests), and the **conclusion / Concluding
+stage end-to-end**:
+- *Phase A (omd):* `omd-cli conclude` writes a `conclusion` entity.
+- *Phase B (sdk):* `record_conclusion` MCP tool + CLI on oas / ocp / pyc writes
+  a `decision` row (`decision_type="conclusion"`, payload in
+  `decisions.metadata_json`); `SdkSessionSource` reads it via
+  `hangar.sdk.provenance.db.get_conclusion`. Verdicts are auto-derived from the
+  persisted requirements vs. the chosen run (see `DESIGN_state_machine.md`).
+  Producer landed in `the-hangar` PR #35; this consumer commit is pinned by the
+  gitlink bump PR #41.
+
+Demo case for walkthroughs: `omd:cessna-composite-wing` (v4) populates all five
+stages. The state strip polls every ~8s. Verified live for the sdk path on
+`sdk:sdk-condemo-539dfb` (verdict *fails*) and `sdk:sdk-lanec-twist-6168b1`
+(verdict *meets*).
+
+**Next / not yet done.**
+- **Study-list UX (the next pickup item).** The list shows ~1600 studies with
+  no filter/pagination; needs hide-zero-activity + sort-by-recency + a search
+  box, in the dashboard (not by pruning the db).
+- **The-hangar decoupling seams** (boundary doc items, still pending): the
+  `hangar-results-reader` extraction, workspace hygiene so an open-only clone
+  syncs without the submodule, and the viewer-split plot adapter.
+- **Phase 3 (deploy)** and **Phase 4 (human-in-the-loop / editable graphs)** are
+  untouched.
+
+The phased checklist below is the original bootstrap plan, kept for the Phase 3+
+detail; the boxes are not maintained as a live tracker (this status block is).
+
 ## Locked decisions
 
 1. **Dev / sync.** `range-safety` is developed as a git submodule under

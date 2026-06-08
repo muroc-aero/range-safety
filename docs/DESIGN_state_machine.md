@@ -90,6 +90,19 @@ Phase 4 write-back hook).
 
 ## How an agent records a conclusion
 
+> **Implemented (2026-06).** This is built end-to-end. For omd it is the
+> `conclusion` entity written by `omd-cli conclude` (Phase A). For the
+> session tools (oas / ocp / pyc) it is a `decision` row with
+> `decision_type = "conclusion"` and the verdict payload in the
+> `decisions.metadata_json` column, written by the `record_conclusion` MCP
+> tool / CLI command (Phase B). The dashboard `SdkSessionSource` reads it via
+> `hangar.sdk.provenance.db.get_conclusion(session_id)`: a conclusion flips
+> Concluding to `populated`, scores the Report view, and replays the
+> per-requirement verdicts. Verdicts are **auto-derived** from the persisted
+> requirements vs. the chosen run's results (`derive_conclusion`); the agent
+> supplies only the chosen run id and a short narrative. The contract is
+> listed in `the-hangar` at `docs/hangar-range-safety-boundary.md`.
+
 Concluding must be something an agent (or human) actively *does*, not only
 something inferred. The mechanism reuses the existing provenance vocabulary,
 so it is additive:

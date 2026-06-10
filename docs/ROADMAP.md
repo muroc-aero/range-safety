@@ -5,7 +5,7 @@ dashboard ships in this repo (`range-safety`); it consumes read-only
 contracts from `the-hangar`. The boundary inventory lives in
 `the-hangar` at `docs/hangar-range-safety-boundary.md`.
 
-## Current status (2026-06-08)
+## Current status (2026-06-10)
 
 The dashboard is built and serving all five stages for both provenance
 patterns (omd plans and sdk sessions). What's done vs. what's left:
@@ -34,9 +34,11 @@ stages. The state strip polls every ~8s. Verified live for the sdk path on
 - **Study-list UX (the next pickup item).** The list shows ~1600 studies with
   no filter/pagination; needs hide-zero-activity + sort-by-recency + a search
   box, in the dashboard (not by pruning the db).
-- **The-hangar decoupling seams** (boundary doc items, still pending): the
-  `hangar-results-reader` extraction, workspace hygiene so an open-only clone
-  syncs without the submodule, and the viewer-split plot adapter.
+- **The-hangar decoupling seams**: the `hangar-results-reader` extraction
+  and the workspace hygiene (open-only clone syncs without the submodule)
+  both landed in the-hangar PR #21 (2026-05-29); the dashboard reads
+  through `hangar.results_reader` today. Of the boundary-doc seams, only
+  the viewer-split plot adapter (`generate_plot_png` stability) remains.
 - **Phase 3 (deploy)** and **Phase 4 (human-in-the-loop / editable graphs)** are
   untouched.
 

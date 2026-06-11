@@ -528,11 +528,213 @@ class SdkSessionSource:
         return plot_adapter.plot_png(run_id, plot_type)
 
 
+class StudyFsSource:
+    """Study source over the SDK study store (``hangar_data/studies/``).
+
+    A study here is the first-class multi-case object from
+    ``hangar.sdk.study``: a spec expanded into many cases (each one run of
+    some runner), with per-case status/outputs checkpointed to
+    ``state.json``. This source projects that state into the dashboard:
+    the study view becomes a spreadsheet-style case table with progress
+    counts, refreshing while the study runs.
+
+    Run-scoped views (results, plots) delegate to the runner's own source;
+    every current runner is omd, so the omd source handles them. When
+    non-omd runners exist this dispatch becomes per-case (see
+    docs/STUDIES.md deferred list in the-hangar).
+    """
+
+    name = "studyfs"
+
+    def __init__(self, omd: OmdSource | None = None) -> None:
+        from hangar.sdk.study.store import studies_root  # noqa: PLC0415
+
+        self._root = studies_root()
+        self._omd = omd
+
+    def _store(self, study_id: str):
+        from hangar.sdk.study import StudyStore  # noqa: PLC0415
+
+        return StudyStore(study_id, root=self._root)
+
+    # -- enumeration -------------------------------------------------------
+
+    @staticmethod
+    def _state_from_progress(summary: dict) -> str:
+        counts = summary.get("counts") or {}
+        done, total = summary.get("done", 0), summary.get("total", 0)
+        if counts.get("running"):
+            return state_machine.EXECUTING
+        if total and done >= total:
+            return state_machine.VERIFYING
+        if done > 0:
+            return state_machine.EXECUTING
+        return state_machine.PLANNING
+
+    def list_studies(self) -> list[dict]:
+        from hangar.sdk.study.store import list_studies as _list  # noqa: PLC0415
+
+        out = []
+        for s in _list(root=self._root):
+            sid = s["study_id"]
+            out.append({
+                "key": f"{self.name}:{sid}",
+                "study_id": sid,
+                "label": f"{sid} ({s.get('done', 0)}/{s.get('total', 0)})",
+                "version": s.get("version"),
+                "current_state": self._state_from_progress(s),
+                "source": self.name,
+                "updated": s.get("updated_at") or "",
+            })
+        return out
+
+    def list_runs(self, study_id: str) -> list[dict]:
+        state = self._store(study_id).load_state()
+        runs = [
+            {"run_id": e["run_ref"], "version": None,
+             # omd run ids embed a sortable timestamp; good enough for
+             # newest-first ordering without per-case timestamps.
+             "created_at": e["run_ref"]}
+            for e in state["cases"].values()
+            if e.get("run_ref") and e.get("in_spec", True)
+        ]
+        runs.sort(key=lambda r: r["created_at"], reverse=True)
+        return runs
+
+    # -- state ---------------------------------------------------------------
+
+    def get_state(self, study_id: str) -> dict:
+        summary = self._store(study_id).status_summary()
+        counts = summary.get("counts") or {}
+        done, total = summary.get("done", 0), summary.get("total", 0)
+        current = self._state_from_progress(summary)
+        coverage = {
+            state_machine.GATHER_REQUIREMENTS: state_machine.ABSENT,
+            state_machine.PLANNING: state_machine.POPULATED,  # spec + expansion
+            state_machine.EXECUTING: (state_machine.POPULATED
+                                      if done or counts.get("running")
+                                      else state_machine.THIN),
+            state_machine.VERIFYING: (state_machine.POPULATED
+                                      if total and done >= total
+                                      else (state_machine.THIN if done else state_machine.ABSENT)),
+            state_machine.CONCLUDING: state_machine.ABSENT,  # TODO study conclusions
+        }
+        return {
+            "current": current,
+            "confidence": 0.8,
+            "signals": {"cases_total": total, "cases_done": done, **counts},
+            "coverage": coverage,
+            "transitions": [],
+            "next": {
+                "forward_state": state_machine.next_forward_state(current),
+                "replan_triggers": [],
+            },
+            "plan_id": study_id,
+            "plan_version": summary.get("version"),
+        }
+
+    # -- views ---------------------------------------------------------------
+
+    def view_study(self, study_id: str) -> dict:
+        store = self._store(study_id)
+        state = store.load_state()
+        cases = [e for e in state["cases"].values() if e.get("in_spec", True)]
+        cases.sort(key=lambda e: e["case_id"])
+
+        param_keys: list[str] = []
+        output_keys: list[str] = []
+        for e in cases:
+            for k in e.get("params") or {}:
+                if k not in param_keys:
+                    param_keys.append(k)
+            for k in e.get("outputs") or {}:
+                if k not in output_keys:
+                    output_keys.append(k)
+
+        return {
+            "study_id": study_id,
+            "key": f"{self.name}:{study_id}",
+            "progress": store.status_summary(state),
+            "param_keys": param_keys,
+            "output_keys": output_keys,
+            "cases": [
+                {
+                    "case_id": e["case_id"],
+                    "runner": e.get("runner"),
+                    "source": e.get("source"),
+                    "params": e.get("params") or {},
+                    "status": e.get("status"),
+                    "run_ref": e.get("run_ref"),
+                    "outputs": e.get("outputs") or {},
+                    "wall_time_s": e.get("wall_time_s"),
+                    "error": e.get("error"),
+                }
+                for e in cases
+            ],
+            # Legacy study-matrix shape kept empty so the template branches.
+            "members": [],
+            "metric_keys": [],
+            "graph": {"nodes": [], "edges": []},
+        }
+
+    def view_requirements(self, study_id: str, version=None) -> dict:
+        # TODO: study-level requirements over aggregate outputs.
+        return {"plan_id": study_id, "requirements": []}
+
+    def view_plan(self, study_id: str, version=None) -> dict:
+        import yaml  # noqa: PLC0415
+
+        spec = {}
+        spec_path = self._store(study_id).dir / "study.yaml"
+        if spec_path.exists():
+            try:
+                spec = yaml.safe_load(spec_path.read_text()) or {}
+            except Exception:  # noqa: BLE001
+                spec = {}
+        return {"plan_id": study_id, "version": (spec.get("metadata") or {}).get("version"),
+                "plan": spec, "decisions": [],
+                "graph": {"nodes": [], "edges": []}, "graph_style": "plan_detail"}
+
+    def view_plan_diff(self, study_id: str, version_a=None, version_b=None) -> dict:
+        return {"plan_id": study_id, "version_a": None, "version_b": None,
+                "changes": [], "summary": {"added": 0, "removed": 0, "modified": 0}}
+
+    def view_reasoning(self, study_id: str, focus=None) -> dict:
+        return {"plan_id": study_id, "focus": focus,
+                "graph": {"nodes": [], "edges": []}}
+
+    def view_report(self, study_id: str, version=None) -> dict:
+        summary = self._store(study_id).status_summary()
+        return {"plan_id": study_id, "version": summary.get("version"),
+                "current_state": self._state_from_progress(summary),
+                "scorecard": {"verified": 0, "violated": 0, "waived": 0,
+                              "open": 0, "draft": 0},
+                "phases": [], "conclusions": [], "replan_triggers": [],
+                "decisions": []}
+
+    # -- run-scoped delegation (all current runners are omd) -----------------
+
+    def _runner_source(self):
+        if self._omd is None:
+            raise plot_adapter.PlotUnavailable(
+                "study case runs need the omd source, which is unavailable")
+        return self._omd
+
+    def view_results(self, run_id: str) -> dict:
+        return self._runner_source().view_results(run_id)
+
+    def plot_types(self, run_id: str) -> list[str]:
+        return self._runner_source().plot_types(run_id)
+
+    def plot_png(self, run_id: str, plot_type: str) -> bytes:
+        return self._runner_source().plot_png(run_id, plot_type)
+
+
 class MultiSource:
     """Aggregate the registered sources and dispatch by ``{source}:{id}`` key.
 
-    Used by the Starlette app. omd is always present; the sdk source is added
-    if the sdk provenance/artifact stack is importable and initialises.
+    Used by the Starlette app. omd is always present; the sdk and studyfs
+    sources are added if their stacks are importable and initialise.
     """
 
     def __init__(self) -> None:
@@ -540,6 +742,10 @@ class MultiSource:
         try:
             self.sources["sdk"] = SdkSessionSource()
         except Exception:  # noqa: BLE001 - sdk store optional/uninitialised
+            pass
+        try:
+            self.sources["studyfs"] = StudyFsSource(omd=self.sources.get("omd"))
+        except Exception:  # noqa: BLE001 - study store optional
             pass
 
     def _src(self, key: str):

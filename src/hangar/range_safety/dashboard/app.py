@@ -154,7 +154,7 @@ def _shell_ctx(plan_id, run_id, src, query) -> dict:
     # and a case-insensitive substring on the id / label.
     all_studies = rm.list_studies()
     studies = all_studies
-    if src in ("omd", "sdk"):
+    if src in ("omd", "sdk", "studyfs"):
         studies = [s for s in studies if s.get("source") == src]
     if query:
         ql = query.lower()

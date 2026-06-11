@@ -1,16 +1,77 @@
 {# Study scope -- the OPTIONAL larger scope grouping multiple analyses (not a
-   lifecycle state). Members are analyses sharing metadata.study; node color =
-   each analysis's current state. Early stub: most data has no study grouping
-   yet, so this often shows a single analysis. #}
+   lifecycle state). Two flavors:
+
+   1. Case study (studyfs source): a hangar.sdk.study spec expanded into
+      many cases. Rendered as a spreadsheet-style case table (params,
+      status, run, outputs) with a progress strip; self-refreshes while
+      cases are still running.
+   2. Plan grouping (omd source, legacy v1): plans sharing metadata.study,
+      rendered as the lineage graph + plan-by-metrics matrix. #}
+{% if data.cases is defined and data.cases %}
+{% set prog = data.progress %}
+<div {% if prog.done < prog.total %}hx-get="/view/study/{{ data.key }}" hx-trigger="every 10s" hx-swap="outerHTML"{% endif %}>
+<h2 class="view-title">Study <span class="mono">{{ data.study_id }}</span>
+  <span class="muted" style="font-size:12px;font-weight:400">&middot; {{ prog.total }} case(s), spec v{{ prog.version }}</span></h2>
+<p class="view-sub">
+  Progress: <strong>{{ prog.done }}/{{ prog.total }}</strong>
+  {% for status, n in prog.counts | dictsort %}
+    &middot; {{ status }} <strong>{{ n }}</strong>
+  {% endfor %}
+  {% if prog.mean_case_wall_s %}&middot; mean case {{ '%.1f' | format(prog.mean_case_wall_s) }} s{% endif %}
+  {% if prog.done < prog.total %}<span class="muted">(auto-refreshing)</span>{% endif %}
+</p>
+
+<div class="progress-track" style="height:6px;background:#222;border-radius:3px;margin:8px 0 14px">
+  <div style="height:6px;border-radius:3px;background:#5a9;width:{{ (100.0 * prog.done / prog.total) | round(1) if prog.total else 0 }}%"></div>
+</div>
+
+<div class="group-label">Case table</div>
+<table class="grid">
+  <thead><tr>
+    <th>Case</th>
+    {% for p in data.param_keys %}<th class="mono">{{ p }}</th>{% endfor %}
+    <th>Status</th>
+    <th>Run</th>
+    {% for o in data.output_keys %}<th class="mono">{{ o }}</th>{% endfor %}
+    <th class="mono">wall s</th>
+  </tr></thead>
+  <tbody>
+  {% for case in data.cases %}
+    <tr>
+      <td class="mono">{{ case.case_id }}{% if case.source == "manual" %} <span class="muted">(manual)</span>{% endif %}</td>
+      {% for p in data.param_keys %}
+        <td class="mono">{% if case.params.get(p) is not none %}{{ case.params[p] }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      {% endfor %}
+      <td>
+        {% if case.status in ("converged", "completed") %}<span style="color:#5a9">{{ case.status }}</span>
+        {% elif case.status in ("failed", "error", "timeout") %}<span style="color:#c66" title="{{ case.error or '' }}">{{ case.status }}</span>
+        {% elif case.status == "running" %}<span style="color:#ca5">{{ case.status }}</span>
+        {% else %}<span class="muted">{{ case.status }}</span>{% endif %}
+      </td>
+      <td class="mono">
+        {% if case.run_ref %}<a href="/?plan_id={{ data.key }}&run_id=studyfs:{{ case.run_ref }}">{{ case.run_ref[-12:] }}</a>
+        {% else %}<span class="muted">&mdash;</span>{% endif %}
+      </td>
+      {% for o in data.output_keys %}
+        <td class="mono">{% if case.outputs.get(o) is not none %}{{ '%.5g' | format(case.outputs[o]) }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      {% endfor %}
+      <td class="mono">{% if case.wall_time_s %}{{ '%.1f' | format(case.wall_time_s) }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% else %}
 <h2 class="view-title">Study scope <span class="muted" style="font-size:12px;font-weight:400">&middot; multiple analyses</span></h2>
 <p class="view-sub">Study <span class="mono">{{ data.study_id }}</span> &middot; {{ data.members | length }} member analysis(es). Each member is its own five-state analysis; node color = its current state.</p>
 
 <div class="card" style="border-color:#3a3320">
-  <span class="muted">Early stub. A study groups multiple analyses (multiple plans / results) as a trade space or campaign. Real multi-analysis content and a richer overview are still to be built; analyses are grouped by <code class="path">metadata.study</code>.</span>
+  <span class="muted">A study groups multiple analyses (multiple plans / results) as a trade space or campaign. Multi-case studies run via <code class="path">hangar.sdk.study</code> get the case table; this plan grouping is the legacy view over <code class="path">metadata.study</code>.</span>
 </div>
 
 {% if not data.members %}
-<div class="empty">No analyses belong to this study (set <code class="path">metadata.study</code> on member plans).</div>
+<div class="empty">No analyses belong to this study (set <code class="path">metadata.study</code> on member plans, or run it as a hangar.sdk.study).</div>
 {% else %}
 <div class="cy-graph" data-cy="study" data-json="study-graph-data"></div>
 <script type="application/json" id="study-graph-data">{{ data.graph | tojson }}</script>
@@ -34,4 +95,5 @@
   {% endfor %}
   </tbody>
 </table>
+{% endif %}
 {% endif %}

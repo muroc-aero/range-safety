@@ -16,6 +16,12 @@ Run locally::
 
 The app reads ``OMD_DB_PATH`` / ``OMD_PLAN_STORE`` from the environment
 (same as the rest of omd); a ``ReadModel`` is built per request.
+
+Handlers are ``async`` (Starlette runs them on the event loop), but the
+read model and matplotlib rendering are synchronous and can be slow, so
+every read-model call runs in the threadpool via ``run_in_threadpool`` —
+one slow plot render must not block every other dashboard request
+(head-of-line) when several viewers share one instance.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
@@ -38,6 +45,15 @@ templates = Jinja2Templates(directory=str(_HERE / "templates"))
 def _read_model() -> MultiSource:
     # Aggregates the omd + sdk sources; dispatches by {source}:{id} key.
     return MultiSource()
+
+
+async def _query(fn):
+    """Run a sync read-model closure in the threadpool.
+
+    ``_read_model()`` construction is included in the closure so any I/O it
+    does also stays off the event loop.
+    """
+    return await run_in_threadpool(fn)
 
 
 def _int_param(request, name):
@@ -56,62 +72,70 @@ def _int_param(request, name):
 
 
 async def machine(request):
-    return JSONResponse(_read_model().machine())
+    return JSONResponse(await _query(lambda: _read_model().machine()))
 
 
 async def state(request):
-    return JSONResponse(_read_model().get_state(request.path_params["plan_id"]))
+    plan_id = request.path_params["plan_id"]
+    return JSONResponse(await _query(lambda: _read_model().get_state(plan_id)))
 
 
 async def requirements(request):
-    rm = _read_model()
-    return JSONResponse(rm.view_requirements(
-        request.path_params["plan_id"], _int_param(request, "version")))
+    plan_id = request.path_params["plan_id"]
+    version = _int_param(request, "version")
+    return JSONResponse(await _query(
+        lambda: _read_model().view_requirements(plan_id, version)))
 
 
 async def plan(request):
-    rm = _read_model()
-    return JSONResponse(rm.view_plan(
-        request.path_params["plan_id"], _int_param(request, "version")))
+    plan_id = request.path_params["plan_id"]
+    version = _int_param(request, "version")
+    return JSONResponse(await _query(
+        lambda: _read_model().view_plan(plan_id, version)))
 
 
 async def plan_diff(request):
-    rm = _read_model()
-    return JSONResponse(rm.view_plan_diff(
-        request.path_params["plan_id"],
-        _int_param(request, "version_a"),
-        _int_param(request, "version_b"),
-    ))
+    plan_id = request.path_params["plan_id"]
+    version_a = _int_param(request, "version_a")
+    version_b = _int_param(request, "version_b")
+    return JSONResponse(await _query(
+        lambda: _read_model().view_plan_diff(plan_id, version_a, version_b)))
 
 
 async def study(request):
-    return JSONResponse(_read_model().view_study(request.path_params["study_id"]))
+    study_id = request.path_params["study_id"]
+    return JSONResponse(await _query(lambda: _read_model().view_study(study_id)))
 
 
 async def results(request):
-    return JSONResponse(_read_model().view_results(request.path_params["run_id"]))
+    run_id = request.path_params["run_id"]
+    return JSONResponse(await _query(lambda: _read_model().view_results(run_id)))
 
 
 async def reasoning(request):
-    rm = _read_model()
-    return JSONResponse(rm.view_reasoning(
-        request.path_params["plan_id"], request.query_params.get("focus")))
+    plan_id = request.path_params["plan_id"]
+    focus = request.query_params.get("focus")
+    return JSONResponse(await _query(
+        lambda: _read_model().view_reasoning(plan_id, focus)))
 
 
 async def report(request):
-    rm = _read_model()
-    return JSONResponse(rm.view_report(
-        request.path_params["plan_id"], _int_param(request, "version")))
+    plan_id = request.path_params["plan_id"]
+    version = _int_param(request, "version")
+    return JSONResponse(await _query(
+        lambda: _read_model().view_report(plan_id, version)))
 
 
 async def plot_type_list(request):
-    return JSONResponse(_read_model().plot_types(request.path_params["run_id"]))
+    run_id = request.path_params["run_id"]
+    return JSONResponse(await _query(lambda: _read_model().plot_types(run_id)))
 
 
 async def plot_image(request):
-    rm = _read_model()
+    run_id = request.path_params["run_id"]
+    plot_type = request.path_params["plot_type"]
     try:
-        png = rm.plot_png(request.path_params["run_id"], request.path_params["plot_type"])
+        png = await _query(lambda: _read_model().plot_png(run_id, plot_type))
     except plot_adapter.PlotUnavailable as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
     return Response(content=png, media_type="image/png")
@@ -122,12 +146,9 @@ async def plot_image(request):
 # ---------------------------------------------------------------------------
 
 
-async def shell(request):
+def _shell_ctx(plan_id, run_id, src, query) -> dict:
+    """Gather the shell template context (sync; runs in the threadpool)."""
     rm = _read_model()
-    plan_id = request.query_params.get("plan_id") or None
-    run_id = request.query_params.get("run_id") or None
-    src = request.query_params.get("src") or "all"
-    query = (request.query_params.get("q") or "").strip()
 
     # Selector list: newest-first (sorted in list_studies), filtered by source
     # and a case-insensitive substring on the id / label.
@@ -147,7 +168,7 @@ async def shell(request):
     # pick. The selector still lets you change it.
     if plan_id and not run_id and runs:
         run_id = runs[0]["run_id"]
-    ctx = {
+    return {
         "studies": studies,
         "studies_total": len(all_studies),
         "studies_shown": len(studies),
@@ -160,66 +181,79 @@ async def shell(request):
         "state": rm.get_state(plan_id) if plan_id else None,
         "state_labels": state_machine.STATE_LABELS,
     }
+
+
+async def shell(request):
+    plan_id = request.query_params.get("plan_id") or None
+    run_id = request.query_params.get("run_id") or None
+    src = request.query_params.get("src") or "all"
+    query = (request.query_params.get("q") or "").strip()
+    ctx = await run_in_threadpool(_shell_ctx, plan_id, run_id, src, query)
     return templates.TemplateResponse(request, "shell.html", ctx)
 
 
-async def view_state_strip(request):
+def _state_strip_ctx(plan_id, run_id) -> dict:
     rm = _read_model()
-    plan_id = request.path_params["plan_id"]
-    run_id = request.query_params.get("run_id") or None
     if not run_id:
         runs = rm.list_runs(plan_id)
         run_id = runs[0]["run_id"] if runs else None
-    return templates.TemplateResponse(request, "_state_strip.html", {
+    return {
         "machine": rm.machine(),
         "state": rm.get_state(plan_id),
         "state_labels": state_machine.STATE_LABELS,
         "plan_id": plan_id,
         "run_id": run_id,
-    })
+    }
+
+
+async def view_state_strip(request):
+    plan_id = request.path_params["plan_id"]
+    run_id = request.query_params.get("run_id") or None
+    ctx = await run_in_threadpool(_state_strip_ctx, plan_id, run_id)
+    return templates.TemplateResponse(request, "_state_strip.html", ctx)
 
 
 async def view_requirements(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_requirements.html", {
-        "data": rm.view_requirements(request.path_params["plan_id"])})
+    plan_id = request.path_params["plan_id"]
+    data = await _query(lambda: _read_model().view_requirements(plan_id))
+    return templates.TemplateResponse(request, "_requirements.html", {"data": data})
 
 
 async def view_plan(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_plan.html", {
-        "data": rm.view_plan(request.path_params["plan_id"])})
+    plan_id = request.path_params["plan_id"]
+    data = await _query(lambda: _read_model().view_plan(plan_id))
+    return templates.TemplateResponse(request, "_plan.html", {"data": data})
 
 
 async def view_plan_diff(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_plan_diff.html", {
-        "data": rm.view_plan_diff(request.path_params["plan_id"])})
+    plan_id = request.path_params["plan_id"]
+    data = await _query(lambda: _read_model().view_plan_diff(plan_id))
+    return templates.TemplateResponse(request, "_plan_diff.html", {"data": data})
 
 
 async def view_study(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_study.html", {
-        "data": rm.view_study(request.path_params["study_id"])})
+    study_id = request.path_params["study_id"]
+    data = await _query(lambda: _read_model().view_study(study_id))
+    return templates.TemplateResponse(request, "_study.html", {"data": data})
 
 
 async def view_reasoning(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_reasoning.html", {
-        "data": rm.view_reasoning(
-            request.path_params["plan_id"], request.query_params.get("focus"))})
+    plan_id = request.path_params["plan_id"]
+    focus = request.query_params.get("focus")
+    data = await _query(lambda: _read_model().view_reasoning(plan_id, focus))
+    return templates.TemplateResponse(request, "_reasoning.html", {"data": data})
 
 
 async def view_report(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_report.html", {
-        "data": rm.view_report(request.path_params["plan_id"])})
+    plan_id = request.path_params["plan_id"]
+    data = await _query(lambda: _read_model().view_report(plan_id))
+    return templates.TemplateResponse(request, "_report.html", {"data": data})
 
 
 async def view_results(request):
-    rm = _read_model()
-    return templates.TemplateResponse(request, "_results.html", {
-        "data": rm.view_results(request.path_params["run_id"])})
+    run_id = request.path_params["run_id"]
+    data = await _query(lambda: _read_model().view_results(run_id))
+    return templates.TemplateResponse(request, "_results.html", {"data": data})
 
 
 async def view_plots(request):
@@ -227,12 +261,12 @@ async def view_plots(request):
     # run (omd factory plots from the recorder, or sdk ArtifactStore plots).
     # Splitting "visualization" vs "optimization" plots was tool-specific;
     # the source decides what is available.
-    rm = _read_model()
     run_id = request.path_params["run_id"]
+    plot_types = await _query(lambda: _read_model().plot_types(run_id))
     return templates.TemplateResponse(request, "_plot_gallery.html", {
         "title": "Plots & visualization",
         "subtitle": "domain and optimization plots rendered for this run",
-        "run_id": run_id, "plot_types": rm.plot_types(run_id)})
+        "run_id": run_id, "plot_types": plot_types})
 
 
 # Back-compat alias; the nav now has a single Plots entry.

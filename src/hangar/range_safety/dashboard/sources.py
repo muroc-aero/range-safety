@@ -210,12 +210,9 @@ class OmdSource(ReadModel):
         # One bulk query over the entities table (O(1) DB round-trips) instead
         # of per-plan _plan() + _dag() + inference, which is O(plans) and was
         # ~18s with 1500+ plans.
-        from hangar.results_reader.db import _get_conn  # noqa: PLC0415
+        from hangar.results_reader import query_entity_index  # noqa: PLC0415
 
-        rows = _get_conn().execute(
-            "SELECT plan_id, entity_type, version, created_at "
-            "FROM entities WHERE plan_id IS NOT NULL"
-        ).fetchall()
+        rows = query_entity_index()
         types_by_plan: dict[str, set] = {}
         version_by_plan: dict[str, int] = {}
         updated_by_plan: dict[str, str] = {}

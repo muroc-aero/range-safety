@@ -121,3 +121,26 @@ def test_nl_solver_without_linear_warns(valid_aero_plan, catalog_dir):
     findings = validate_structural(valid_aero_plan, catalog_dir=catalog_dir)
     warnings = [f for f in findings if f["severity"] == "warning"]
     assert any(f["check"] == "linear_solver_specified" for f in warnings)
+
+
+def test_env_var_overrides_catalog_walk(tmp_path, monkeypatch, catalog_dir):
+    """HANGAR_CATALOG_DIR wins over the parent-directory walk (boundary
+    doc contract; the walk cannot work from an installed wheel)."""
+    from hangar.range_safety.validators.structural import _default_catalog_dir
+
+    monkeypatch.setenv("HANGAR_CATALOG_DIR", str(tmp_path))
+    assert _default_catalog_dir() == tmp_path
+
+    monkeypatch.delenv("HANGAR_CATALOG_DIR")
+    assert _default_catalog_dir() == catalog_dir
+
+
+def test_env_var_catalog_is_loaded(tmp_path, monkeypatch, valid_aero_plan):
+    """validate_structural with no catalog_dir reads the env-var catalog."""
+    entry = tmp_path / "custom.yaml"
+    entry.write_text("type: custom/OnlyType\n")
+    monkeypatch.setenv("HANGAR_CATALOG_DIR", str(tmp_path))
+
+    findings = validate_structural(valid_aero_plan)
+    errors = [f for f in findings if f["severity"] == "error"]
+    assert any(f["check"] == "component_type_exists" for f in errors)

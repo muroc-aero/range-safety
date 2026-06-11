@@ -8,6 +8,7 @@ and uses known solver/optimizer types.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import yaml
@@ -21,7 +22,16 @@ _OPTIMIZERS = {"SLSQP", "COBYLA", "L-BFGS-B", "Nelder-Mead"}
 
 
 def _default_catalog_dir() -> Path:
-    """Resolve the default catalog directory from the repo root."""
+    """Resolve the default catalog directory.
+
+    ``HANGAR_CATALOG_DIR`` wins (the boundary doc's contract; the only
+    resolution that works from an installed wheel or container). Falls
+    back to walking parent directories for a ``catalog/`` dir, which only
+    succeeds in a source checkout.
+    """
+    env_dir = os.environ.get("HANGAR_CATALOG_DIR")
+    if env_dir:
+        return Path(env_dir)
     # Walk up from this file to find the catalog/ directory
     here = Path(__file__).resolve()
     # packages/range-safety/src/hangar/range_safety/validators/structural.py

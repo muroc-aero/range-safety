@@ -81,6 +81,20 @@ In a deployment the dashboard runs as its own service. The Hangar tool images
 (for example omd) do not bundle this package, so their in-container autostart
 hook (`RS_DASHBOARD_AUTOSTART`) stays off there.
 
+### Authentication
+
+The dashboard reuses the unified viewer's browser-OIDC flow
+(`hangar.sdk.viz.viewer_auth`): set `HANGAR_VIEWER_OIDC_CLIENT_ID`,
+`HANGAR_VIEWER_OIDC_CLIENT_SECRET`, `HANGAR_VIEWER_SESSION_SECRET`,
+`OIDC_ISSUER_URL`, and `RESOURCE_SERVER_URL` (the dashboard's external base)
+and every content route requires a Keycloak login; the OAuth callback is
+`{RESOURCE_SERVER_URL}/viewer/callback`. With those unset the dashboard runs
+open (local dev). Once authenticated, the study list and study-scoped views
+are filtered to the viewer's studies: a study records its `owner` (the user
+who first ran it, from `get_current_user()`), and a user sees their own plus
+ownerless studies; members of `HANGAR_VIEWER_ADMIN_ROLE` see everything.
+omd/sdk run detail relies on omd's existing per-row `user` scoping.
+
 ## Development
 
 This package is part of the the-hangar uv workspace. From a full-stack clone

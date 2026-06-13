@@ -455,3 +455,53 @@ def test_app_plot_image_503_when_no_artifact(isolate_omd_data):
     resp = client.get("/api/plots/run-1/planform")
     assert resp.status_code == 503
     assert "error" in resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Per-user study scoping (dashboard OIDC)
+# ---------------------------------------------------------------------------
+
+
+def _seed_owned_study(study_id: str, owner: str) -> None:
+    """Create a minimal study with an owner in the env-pointed study root."""
+    from hangar.sdk.study.store import StudyStore
+
+    store = StudyStore(study_id)
+    state = store.load_state()
+    state["owner"] = owner
+    store._write_state(state)  # persist state.json so list_studies sees it
+
+
+def test_multisource_filters_studies_by_owner(isolate_omd_data):
+    from hangar.range_safety.dashboard.sources import MultiSource
+
+    _seed_owned_study("study-alice", "alice")
+    _seed_owned_study("study-bob", "bob")
+    _seed_owned_study("study-public", "")  # ownerless
+
+    def ids(ms):
+        return {s["study_id"] for s in ms.list_studies()
+                if s.get("source") == "studyfs"}
+
+    # alice sees her own + the ownerless one, not bob's
+    assert ids(MultiSource(viewer_user="alice")) == {"study-alice", "study-public"}
+    # admin sees everything
+    assert ids(MultiSource(viewer_user="alice", viewer_is_admin=True)) == {
+        "study-alice", "study-bob", "study-public"}
+    # no-auth / empty viewer sees everything
+    assert ids(MultiSource()) == {"study-alice", "study-bob", "study-public"}
+
+
+def test_multisource_authorize_study_blocks_foreign(isolate_omd_data):
+    import pytest
+
+    from hangar.range_safety.dashboard.sources import MultiSource
+
+    _seed_owned_study("study-bob", "bob")
+    ms = MultiSource(viewer_user="alice")
+    with pytest.raises(PermissionError):
+        ms.authorize_study("studyfs:study-bob")
+    # admin and owner pass
+    MultiSource(viewer_user="bob").authorize_study("studyfs:study-bob")
+    MultiSource(viewer_user="alice", viewer_is_admin=True).authorize_study(
+        "studyfs:study-bob")

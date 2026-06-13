@@ -584,9 +584,17 @@ class StudyFsSource:
                 "version": s.get("version"),
                 "current_state": self._state_from_progress(s),
                 "source": self.name,
+                "owner": s.get("owner") or "",
                 "updated": s.get("updated_at") or "",
             })
         return out
+
+    def owner_of(self, study_id: str) -> str:
+        """The study's recorded owner, or "" (ownerless / visible to all)."""
+        try:
+            return self._store(study_id).load_state().get("owner") or ""
+        except Exception:  # noqa: BLE001 - missing/corrupt state is ownerless
+            return ""
 
     def list_runs(self, study_id: str) -> list[dict]:
         state = self._store(study_id).load_state()
@@ -737,7 +745,13 @@ class MultiSource:
     sources are added if their stacks are importable and initialise.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, viewer_user: str = "", viewer_is_admin: bool = False) -> None:
+        # The authenticated dashboard user (from the OIDC session), used to
+        # scope the study list and study access. Empty user / no-auth mode
+        # sees everything; an admin sees everything; otherwise a user sees
+        # ownerless studies plus those they own.
+        self.viewer_user = viewer_user or ""
+        self.viewer_is_admin = bool(viewer_is_admin)
         self.sources: dict[str, Any] = {"omd": OmdSource()}
         try:
             self.sources["sdk"] = SdkSessionSource()
@@ -752,6 +766,28 @@ class MultiSource:
         source, ident = split_key(key)
         return self.sources.get(source, self.sources["omd"]), ident
 
+    def _can_see(self, owner: str) -> bool:
+        """Whether the current viewer may see an item owned by ``owner``."""
+        if not self.viewer_user or self.viewer_is_admin:
+            return True  # no-auth mode or admin: full visibility
+        if not owner:
+            return True  # ownerless (pre-scoping / CLI without identity)
+        return owner == self.viewer_user
+
+    def authorize_study(self, study_key: str) -> None:
+        """Raise PermissionError if the viewer may not access this study.
+
+        Only studyfs studies carry an owner today; omd/sdk plans are left to
+        their own per-user scoping and are not gated here.
+        """
+        source, ident = split_key(study_key)
+        src = self.sources.get(source)
+        owner_of = getattr(src, "owner_of", None)
+        if owner_of is None:
+            return
+        if not self._can_see(owner_of(ident)):
+            raise PermissionError(f"not authorized for study {study_key!r}")
+
     # static machine definition (tool-agnostic)
     def machine(self) -> dict:
         return state_machine.describe_machine()
@@ -763,12 +799,15 @@ class MultiSource:
                 studies.extend(src.list_studies())
             except Exception:  # noqa: BLE001 - a bad source must not break the list
                 continue
+        # Scope to the authenticated viewer (ownerless entries stay visible).
+        studies = [s for s in studies if self._can_see(s.get("owner") or "")]
         # Newest first (by last-updated timestamp), so the most recent
         # analyses are at the top of the selector.
         studies.sort(key=lambda s: s.get("updated") or "", reverse=True)
         return studies
 
     def list_runs(self, study_key: str) -> list[dict]:
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         prefix = study_key.split(":", 1)[0] if ":" in study_key else "omd"
         runs = src.list_runs(ident)
@@ -780,32 +819,39 @@ class MultiSource:
     # -- view dispatch (study-scoped) -------------------------------------
 
     def get_state(self, study_key: str) -> dict:
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         state = src.get_state(ident)
         state["plan_id"] = study_key
         return state
 
     def view_requirements(self, study_key, version=None):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_requirements(ident, version)
 
     def view_plan(self, study_key, version=None):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_plan(ident, version)
 
     def view_plan_diff(self, study_key, version_a=None, version_b=None):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_plan_diff(ident, version_a, version_b)
 
     def view_study(self, study_key):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_study(ident)
 
     def view_reasoning(self, study_key, focus=None):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_reasoning(ident, focus)
 
     def view_report(self, study_key, version=None):
+        self.authorize_study(study_key)
         src, ident = self._src(study_key)
         return src.view_report(ident, version)
 

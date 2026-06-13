@@ -26,10 +26,14 @@ one slow plot render must not block every other dashboard request
 
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware import Middleware
+from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
@@ -38,13 +42,19 @@ from starlette.templating import Jinja2Templates
 from hangar.range_safety.dashboard import plot_adapter, state_machine
 from hangar.range_safety.dashboard.sources import MultiSource
 
+logger = logging.getLogger(__name__)
+
 _HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
 
 
-def _read_model() -> MultiSource:
-    # Aggregates the omd + sdk sources; dispatches by {source}:{id} key.
-    return MultiSource()
+def _read_model(request: Request | None = None) -> MultiSource:
+    # Aggregates the omd + sdk + studyfs sources; dispatches by {source}:{id}
+    # key. Scoped to the authenticated viewer (set by the OIDC wrapper on
+    # request.state); empty user / no-auth mode sees everything.
+    user = getattr(request.state, "viewer_user", "") if request else ""
+    is_admin = getattr(request.state, "viewer_is_admin", False) if request else False
+    return MultiSource(viewer_user=user, viewer_is_admin=is_admin)
 
 
 async def _query(fn):
@@ -72,26 +82,26 @@ def _int_param(request, name):
 
 
 async def machine(request):
-    return JSONResponse(await _query(lambda: _read_model().machine()))
+    return JSONResponse(await _query(lambda: _read_model(request).machine()))
 
 
 async def state(request):
     plan_id = request.path_params["plan_id"]
-    return JSONResponse(await _query(lambda: _read_model().get_state(plan_id)))
+    return JSONResponse(await _query(lambda: _read_model(request).get_state(plan_id)))
 
 
 async def requirements(request):
     plan_id = request.path_params["plan_id"]
     version = _int_param(request, "version")
     return JSONResponse(await _query(
-        lambda: _read_model().view_requirements(plan_id, version)))
+        lambda: _read_model(request).view_requirements(plan_id, version)))
 
 
 async def plan(request):
     plan_id = request.path_params["plan_id"]
     version = _int_param(request, "version")
     return JSONResponse(await _query(
-        lambda: _read_model().view_plan(plan_id, version)))
+        lambda: _read_model(request).view_plan(plan_id, version)))
 
 
 async def plan_diff(request):
@@ -99,43 +109,43 @@ async def plan_diff(request):
     version_a = _int_param(request, "version_a")
     version_b = _int_param(request, "version_b")
     return JSONResponse(await _query(
-        lambda: _read_model().view_plan_diff(plan_id, version_a, version_b)))
+        lambda: _read_model(request).view_plan_diff(plan_id, version_a, version_b)))
 
 
 async def study(request):
     study_id = request.path_params["study_id"]
-    return JSONResponse(await _query(lambda: _read_model().view_study(study_id)))
+    return JSONResponse(await _query(lambda: _read_model(request).view_study(study_id)))
 
 
 async def results(request):
     run_id = request.path_params["run_id"]
-    return JSONResponse(await _query(lambda: _read_model().view_results(run_id)))
+    return JSONResponse(await _query(lambda: _read_model(request).view_results(run_id)))
 
 
 async def reasoning(request):
     plan_id = request.path_params["plan_id"]
     focus = request.query_params.get("focus")
     return JSONResponse(await _query(
-        lambda: _read_model().view_reasoning(plan_id, focus)))
+        lambda: _read_model(request).view_reasoning(plan_id, focus)))
 
 
 async def report(request):
     plan_id = request.path_params["plan_id"]
     version = _int_param(request, "version")
     return JSONResponse(await _query(
-        lambda: _read_model().view_report(plan_id, version)))
+        lambda: _read_model(request).view_report(plan_id, version)))
 
 
 async def plot_type_list(request):
     run_id = request.path_params["run_id"]
-    return JSONResponse(await _query(lambda: _read_model().plot_types(run_id)))
+    return JSONResponse(await _query(lambda: _read_model(request).plot_types(run_id)))
 
 
 async def plot_image(request):
     run_id = request.path_params["run_id"]
     plot_type = request.path_params["plot_type"]
     try:
-        png = await _query(lambda: _read_model().plot_png(run_id, plot_type))
+        png = await _query(lambda: _read_model(request).plot_png(run_id, plot_type))
     except plot_adapter.PlotUnavailable as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
     return Response(content=png, media_type="image/png")
@@ -146,9 +156,9 @@ async def plot_image(request):
 # ---------------------------------------------------------------------------
 
 
-def _shell_ctx(plan_id, run_id, src, query) -> dict:
+def _shell_ctx(request, plan_id, run_id, src, query) -> dict:
     """Gather the shell template context (sync; runs in the threadpool)."""
-    rm = _read_model()
+    rm = _read_model(request)
 
     # Selector list: newest-first (sorted in list_studies), filtered by source
     # and a case-insensitive substring on the id / label.
@@ -188,12 +198,12 @@ async def shell(request):
     run_id = request.query_params.get("run_id") or None
     src = request.query_params.get("src") or "all"
     query = (request.query_params.get("q") or "").strip()
-    ctx = await run_in_threadpool(_shell_ctx, plan_id, run_id, src, query)
+    ctx = await run_in_threadpool(_shell_ctx, request, plan_id, run_id, src, query)
     return templates.TemplateResponse(request, "shell.html", ctx)
 
 
-def _state_strip_ctx(plan_id, run_id) -> dict:
-    rm = _read_model()
+def _state_strip_ctx(request, plan_id, run_id) -> dict:
+    rm = _read_model(request)
     if not run_id:
         runs = rm.list_runs(plan_id)
         run_id = runs[0]["run_id"] if runs else None
@@ -209,50 +219,50 @@ def _state_strip_ctx(plan_id, run_id) -> dict:
 async def view_state_strip(request):
     plan_id = request.path_params["plan_id"]
     run_id = request.query_params.get("run_id") or None
-    ctx = await run_in_threadpool(_state_strip_ctx, plan_id, run_id)
+    ctx = await run_in_threadpool(_state_strip_ctx, request, plan_id, run_id)
     return templates.TemplateResponse(request, "_state_strip.html", ctx)
 
 
 async def view_requirements(request):
     plan_id = request.path_params["plan_id"]
-    data = await _query(lambda: _read_model().view_requirements(plan_id))
+    data = await _query(lambda: _read_model(request).view_requirements(plan_id))
     return templates.TemplateResponse(request, "_requirements.html", {"data": data})
 
 
 async def view_plan(request):
     plan_id = request.path_params["plan_id"]
-    data = await _query(lambda: _read_model().view_plan(plan_id))
+    data = await _query(lambda: _read_model(request).view_plan(plan_id))
     return templates.TemplateResponse(request, "_plan.html", {"data": data})
 
 
 async def view_plan_diff(request):
     plan_id = request.path_params["plan_id"]
-    data = await _query(lambda: _read_model().view_plan_diff(plan_id))
+    data = await _query(lambda: _read_model(request).view_plan_diff(plan_id))
     return templates.TemplateResponse(request, "_plan_diff.html", {"data": data})
 
 
 async def view_study(request):
     study_id = request.path_params["study_id"]
-    data = await _query(lambda: _read_model().view_study(study_id))
+    data = await _query(lambda: _read_model(request).view_study(study_id))
     return templates.TemplateResponse(request, "_study.html", {"data": data})
 
 
 async def view_reasoning(request):
     plan_id = request.path_params["plan_id"]
     focus = request.query_params.get("focus")
-    data = await _query(lambda: _read_model().view_reasoning(plan_id, focus))
+    data = await _query(lambda: _read_model(request).view_reasoning(plan_id, focus))
     return templates.TemplateResponse(request, "_reasoning.html", {"data": data})
 
 
 async def view_report(request):
     plan_id = request.path_params["plan_id"]
-    data = await _query(lambda: _read_model().view_report(plan_id))
+    data = await _query(lambda: _read_model(request).view_report(plan_id))
     return templates.TemplateResponse(request, "_report.html", {"data": data})
 
 
 async def view_results(request):
     run_id = request.path_params["run_id"]
-    data = await _query(lambda: _read_model().view_results(run_id))
+    data = await _query(lambda: _read_model(request).view_results(run_id))
     return templates.TemplateResponse(request, "_results.html", {"data": data})
 
 
@@ -262,7 +272,7 @@ async def view_plots(request):
     # Splitting "visualization" vs "optimization" plots was tool-specific;
     # the source decides what is available.
     run_id = request.path_params["run_id"]
-    plot_types = await _query(lambda: _read_model().plot_types(run_id))
+    plot_types = await _query(lambda: _read_model(request).plot_types(run_id))
     return templates.TemplateResponse(request, "_plot_gallery.html", {
         "title": "Plots & visualization",
         "subtitle": "domain and optimization plots rendered for this run",
@@ -273,34 +283,105 @@ async def view_plots(request):
 view_visualization = view_plots
 
 
-routes = [
-    # shell
-    Route("/", shell),
-    # server-rendered view fragments (htmx)
-    Route("/view/state-strip/{plan_id}", view_state_strip),
-    Route("/view/requirements/{plan_id}", view_requirements),
-    Route("/view/plan/{plan_id}", view_plan),
-    Route("/view/plan-diff/{plan_id}", view_plan_diff),
-    Route("/view/study/{study_id}", view_study),
-    Route("/view/reasoning/{plan_id}", view_reasoning),
-    Route("/view/report/{plan_id}", view_report),
-    Route("/view/results/{run_id}", view_results),
-    Route("/view/visualization/{run_id}", view_visualization),
-    Route("/view/plots/{run_id}", view_plots),
-    # JSON API
-    Route("/api/machine", machine),
-    Route("/api/state/{plan_id}", state),
-    Route("/api/requirements/{plan_id}", requirements),
-    Route("/api/plan/{plan_id}", plan),
-    Route("/api/plan-diff/{plan_id}", plan_diff),
-    Route("/api/study/{study_id}", study),
-    Route("/api/results/{run_id}", results),
-    Route("/api/reasoning/{plan_id}", reasoning),
-    Route("/api/report/{plan_id}", report),
-    Route("/api/plots/{run_id}", plot_type_list),
-    Route("/api/plots/{run_id}/{plot_type}", plot_image),
-    # static assets
-    Mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static"),
-]
+async def healthz(request):
+    return JSONResponse({"status": "ok"})
 
-app = Starlette(routes=routes)
+
+async def _on_not_authorized(request: Request, exc: Exception) -> Response:
+    """A study the viewer does not own (or a missing study) -> 403."""
+    return JSONResponse({"error": "not authorized for this study"},
+                        status_code=403)
+
+
+def _content_routes() -> list[tuple[str, str, object]]:
+    """(path, name, endpoint) for every authenticated content route.
+
+    Static assets and the auth/health endpoints are added separately and
+    are NOT wrapped by the OIDC decorator.
+    """
+    return [
+        # shell
+        ("/", "shell", shell),
+        # server-rendered view fragments (htmx)
+        ("/view/state-strip/{plan_id}", "view_state_strip", view_state_strip),
+        ("/view/requirements/{plan_id}", "view_requirements", view_requirements),
+        ("/view/plan/{plan_id}", "view_plan", view_plan),
+        ("/view/plan-diff/{plan_id}", "view_plan_diff", view_plan_diff),
+        ("/view/study/{study_id}", "view_study", view_study),
+        ("/view/reasoning/{plan_id}", "view_reasoning", view_reasoning),
+        ("/view/report/{plan_id}", "view_report", view_report),
+        ("/view/results/{run_id}", "view_results", view_results),
+        ("/view/visualization/{run_id}", "view_visualization", view_visualization),
+        ("/view/plots/{run_id}", "view_plots", view_plots),
+        # JSON API
+        ("/api/machine", "machine", machine),
+        ("/api/state/{plan_id}", "state", state),
+        ("/api/requirements/{plan_id}", "requirements", requirements),
+        ("/api/plan/{plan_id}", "plan", plan),
+        ("/api/plan-diff/{plan_id}", "plan_diff", plan_diff),
+        ("/api/study/{study_id}", "study", study),
+        ("/api/results/{run_id}", "results", results),
+        ("/api/reasoning/{plan_id}", "reasoning", reasoning),
+        ("/api/report/{plan_id}", "report", report),
+        ("/api/plots/{run_id}", "plot_type_list", plot_type_list),
+        ("/api/plots/{run_id}/{plot_type}", "plot_image", plot_image),
+    ]
+
+
+def build_app() -> tuple[Starlette, str]:
+    """Assemble the dashboard app, with OIDC login when configured.
+
+    Returns ``(app, auth_mode)`` where auth_mode is ``"oidc"`` or ``""``.
+    Mirrors the unified viewer (``hangar.viewer.server.build_app``): the
+    same ``hangar.sdk.viz.viewer_auth`` browser-OIDC session flow protects
+    every content route, so the dashboard reuses the ``hangar-viewer``
+    Keycloak client and the ``HANGAR_VIEWER_*`` env. Without OIDC config it
+    runs open (local dev), and ``MultiSource`` sees an empty viewer -> all
+    studies visible.
+    """
+    from hangar.sdk.viz.viewer_auth import build_viewer_oidc_config, require_viewer_oidc
+    from hangar.sdk.viz.viewer_routes import _build_oidc_routes
+
+    static = Mount("/static", StaticFiles(directory=str(_HERE / "static")),
+                   name="static")
+    exception_handlers = {PermissionError: _on_not_authorized}
+
+    oidc_config = build_viewer_oidc_config()
+    if oidc_config is not None:
+        from starlette.middleware.sessions import SessionMiddleware
+
+        decorator = require_viewer_oidc(oidc_config)
+        routes = [Route(p, decorator(h), name=n) for p, n, h in _content_routes()]
+        routes += _build_oidc_routes(oidc_config)
+        routes += [Route("/healthz", healthz), static]
+
+        resource_server_url = os.environ.get(
+            "RESOURCE_SERVER_URL", "http://localhost:7655").rstrip("/")
+        app = Starlette(
+            routes=routes,
+            exception_handlers=exception_handlers,
+            middleware=[
+                Middleware(
+                    SessionMiddleware,
+                    secret_key=oidc_config.session_secret,
+                    session_cookie="hangar_dashboard_session",
+                    same_site="lax",
+                    https_only=resource_server_url.startswith("https"),
+                    max_age=86400,
+                ),
+            ],
+        )
+        app.state.oidc_config = oidc_config
+        return app, "oidc"
+
+    # No auth (local dev): every study visible, no login.
+    logger.warning(
+        "Range-safety dashboard running without authentication. Set "
+        "HANGAR_VIEWER_OIDC_CLIENT_SECRET (+ HANGAR_VIEWER_OIDC_CLIENT_ID, "
+        "HANGAR_VIEWER_SESSION_SECRET) for per-user access control.")
+    routes = [Route(p, h, name=n) for p, n, h in _content_routes()]
+    routes += [Route("/healthz", healthz), static]
+    return Starlette(routes=routes, exception_handlers=exception_handlers), ""
+
+
+app, _AUTH_MODE = build_app()

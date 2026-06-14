@@ -357,9 +357,20 @@ def build_app() -> tuple[Starlette, str]:
 
         resource_server_url = os.environ.get(
             "RESOURCE_SERVER_URL", "http://localhost:7655").rstrip("/")
+
+        # The dashboard is started by the uvicorn CLI (no custom main()), so
+        # OIDC discovery -- which populates config.authorization_endpoint /
+        # token_endpoint from Keycloak's well-known doc -- must run as an ASGI
+        # startup hook. Without it login_redirect emits a host-relative
+        # authorize URL and the browser loops on the dashboard itself.
+        async def _discover_oidc() -> None:
+            from hangar.sdk.viz.viewer_auth import discover_oidc_endpoints
+            await discover_oidc_endpoints(oidc_config)
+
         app = Starlette(
             routes=routes,
             exception_handlers=exception_handlers,
+            on_startup=[_discover_oidc],
             middleware=[
                 Middleware(
                     SessionMiddleware,

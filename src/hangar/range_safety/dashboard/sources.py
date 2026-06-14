@@ -649,6 +649,22 @@ class StudyFsSource:
         cases = [e for e in state["cases"].values() if e.get("in_spec", True)]
         cases.sort(key=lambda e: e["case_id"])
 
+        # Each omd case is run as its own plan ({study_id}--{case_id}); the
+        # per-case plans are collapsed out of the study selector, so resolve
+        # each case's plan key here off its run entity (inheriting the
+        # runner's exact, sanitized plan_id) to deep-link the case table to
+        # that plan's DAG. ``None`` for non-omd runners / unrecorded runs.
+        try:
+            from hangar.results_reader import query_entity  # noqa: PLC0415
+        except Exception:  # pragma: no cover - results_reader optional
+            query_entity = None
+
+        def _plan_key(run_ref: str | None) -> str | None:
+            if not run_ref or query_entity is None:
+                return None
+            pid = (query_entity(run_ref) or {}).get("plan_id")
+            return f"omd:{pid}" if pid else None
+
         param_keys: list[str] = []
         output_keys: list[str] = []
         for e in cases:
@@ -673,6 +689,7 @@ class StudyFsSource:
                     "params": e.get("params") or {},
                     "status": e.get("status"),
                     "run_ref": e.get("run_ref"),
+                    "plan_key": _plan_key(e.get("run_ref")),
                     "outputs": e.get("outputs") or {},
                     "wall_time_s": e.get("wall_time_s"),
                     "error": e.get("error"),

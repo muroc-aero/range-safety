@@ -538,3 +538,35 @@ def test_multisource_authorize_study_blocks_foreign(isolate_omd_data):
     MultiSource(viewer_user="bob").authorize_study("studyfs:study-bob")
     MultiSource(viewer_user="alice", viewer_is_admin=True).authorize_study(
         "studyfs:study-bob")
+
+
+def test_studyfs_view_study_resolves_per_case_plan_key(isolate_omd_data):
+    """Each omd case row carries its own plan key for the DAG deep-link.
+
+    The per-case plans ({study_id}--{case_id}) are collapsed out of the
+    selector, so the case table resolves the plan key off the run entity to
+    deep-link the Plan-detail DAG. Cases with no run get no key.
+    """
+    from hangar.range_safety.dashboard.sources import StudyFsSource
+    from hangar.sdk.study.store import StudyStore
+
+    tmp = isolate_omd_data
+    init_analysis_db(tmp / "analysis.db")
+    record_entity("run-xyz", "run_record", "test",
+                  plan_id="grid--a0-m0.6", version=1)
+
+    store = StudyStore("grid")
+    state = store.load_state()
+    state["cases"] = {
+        "a0-m0.6": {"case_id": "a0-m0.6", "runner": "omd", "in_spec": True,
+                    "status": "converged", "params": {"alpha": 0.0},
+                    "run_ref": "run-xyz", "outputs": {"CL": 0.0}},
+        "a2-m0.6": {"case_id": "a2-m0.6", "runner": "omd", "in_spec": True,
+                    "status": "pending", "params": {"alpha": 2.0},
+                    "run_ref": None, "outputs": {}},  # no run -> no plan key
+    }
+    store._write_state(state)
+
+    cases = {c["case_id"]: c for c in StudyFsSource().view_study("grid")["cases"]}
+    assert cases["a0-m0.6"]["plan_key"] == "omd:grid--a0-m0.6"
+    assert cases["a2-m0.6"]["plan_key"] is None

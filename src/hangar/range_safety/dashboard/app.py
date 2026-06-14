@@ -360,17 +360,23 @@ def build_app() -> tuple[Starlette, str]:
 
         # The dashboard is started by the uvicorn CLI (no custom main()), so
         # OIDC discovery -- which populates config.authorization_endpoint /
-        # token_endpoint from Keycloak's well-known doc -- must run as an ASGI
-        # startup hook. Without it login_redirect emits a host-relative
-        # authorize URL and the browser loops on the dashboard itself.
-        async def _discover_oidc() -> None:
+        # token_endpoint from Keycloak's well-known doc -- must run inside the
+        # ASGI lifespan. Without it login_redirect emits a host-relative
+        # authorize URL and the browser loops on the dashboard itself. Use a
+        # lifespan context manager rather than on_startup= (dropped in newer
+        # Starlette).
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def _lifespan(_app):
             from hangar.sdk.viz.viewer_auth import discover_oidc_endpoints
             await discover_oidc_endpoints(oidc_config)
+            yield
 
         app = Starlette(
             routes=routes,
             exception_handlers=exception_handlers,
-            on_startup=[_discover_oidc],
+            lifespan=_lifespan,
             middleware=[
                 Middleware(
                     SessionMiddleware,

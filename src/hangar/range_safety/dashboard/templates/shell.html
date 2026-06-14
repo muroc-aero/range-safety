@@ -97,7 +97,7 @@
     {% for slug, label, stage, run_scoped in lifecycle %}
       {% set target_id = run_id if run_scoped else plan_id %}
       {% if target_id %}
-      <a class="nav-link {% if slug == 'requirements' %}active{% endif %}"
+      <a class="nav-link {% if slug == 'requirements' and not (plan_id and plan_id.startswith('studyfs:')) %}active{% endif %}"
          hx-get="/view/{{ slug }}/{{ target_id }}" hx-target="#view" hx-push-url="false">{{ label }}
          <span class="nav-stage">{{ stage }}</span></a>
       {% else %}
@@ -110,14 +110,16 @@
        groups multiple analyses. (Overview view is an early stub.) #}
     <div class="nav-group">Study scope <span class="nav-stage">multi-analysis</span></div>
     {% if plan_id %}
-    <a class="nav-link" hx-get="/view/study/{{ plan_id }}" hx-target="#view" hx-push-url="false">Study overview</a>
+    <a class="nav-link {% if plan_id.startswith('studyfs:') %}active{% endif %}" hx-get="/view/study/{{ plan_id }}" hx-target="#view" hx-push-url="false">Study overview</a>
     {% else %}
     <a class="nav-link disabled">Study overview</a>
     {% endif %}
   </nav>
 
+  {# A studyfs key is a multi-case study -- default to its case table, not the
+     (empty) per-plan requirements view. Plain plans still open on requirements. #}
   <div id="view"
-       {% if plan_id %}hx-get="/view/requirements/{{ plan_id }}" hx-trigger="load" hx-swap="innerHTML"{% endif %}>
+       {% if plan_id and plan_id.startswith("studyfs:") %}hx-get="/view/study/{{ plan_id }}" hx-trigger="load" hx-swap="innerHTML"{% elif plan_id %}hx-get="/view/requirements/{{ plan_id }}" hx-trigger="load" hx-swap="innerHTML"{% endif %}>
     {% if not plan_id %}
     <div class="empty">Select a study / plan above to begin. The five-state lifecycle and
     its replan / rerun / rescope feedback loops are inferred from the recorded provenance.</div>

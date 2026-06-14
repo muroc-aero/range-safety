@@ -194,7 +194,10 @@ def _shell_ctx(request, plan_id, run_id, src, query) -> dict:
 
 
 async def shell(request):
-    plan_id = request.query_params.get("plan_id") or None
+    # ``study`` is a back-compat alias for ``plan_id`` (older omd tool results
+    # and external links emitted ``?study=studyfs:<id>``).
+    plan_id = (request.query_params.get("plan_id")
+               or request.query_params.get("study") or None)
     run_id = request.query_params.get("run_id") or None
     src = request.query_params.get("src") or "all"
     query = (request.query_params.get("q") or "").strip()

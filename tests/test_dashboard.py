@@ -492,6 +492,39 @@ def test_multisource_filters_studies_by_owner(isolate_omd_data):
     assert ids(MultiSource()) == {"study-alice", "study-bob", "study-public"}
 
 
+def test_multisource_collapses_omd_study_footprint(isolate_omd_data):
+    """A study-layer study shows as one studyfs row, not its omd plan footprint.
+
+    The omd source lists every plan as a study, so a study run through
+    hangar.sdk.study otherwise leaks a legacy grouping (plan id == study id)
+    and one row per case plan (``{study_id}--{case_id}``). All of those should
+    collapse into the single studyfs case-table entry.
+    """
+    from hangar.range_safety.dashboard.sources import MultiSource
+
+    class _Stub:
+        def __init__(self, name, rows):
+            self.name = name
+            self._rows = rows
+
+        def list_studies(self):
+            return self._rows
+
+    omd_rows = [
+        {"key": "omd:grid", "study_id": "grid", "source": "omd"},          # grouping dup
+        {"key": "omd:grid--a0", "study_id": "grid--a0", "source": "omd"},  # case plan
+        {"key": "omd:grid--a2", "study_id": "grid--a2", "source": "omd"},  # case plan
+        {"key": "omd:solo", "study_id": "solo", "source": "omd"},          # real standalone plan
+    ]
+    studyfs_rows = [{"key": "studyfs:grid", "study_id": "grid", "source": "studyfs"}]
+
+    ms = MultiSource()  # no-auth: owner scoping is a no-op here
+    ms.sources = {"omd": _Stub("omd", omd_rows), "studyfs": _Stub("studyfs", studyfs_rows)}
+
+    keys = {s["key"] for s in ms.list_studies()}
+    assert keys == {"studyfs:grid", "omd:solo"}
+
+
 def test_multisource_authorize_study_blocks_foreign(isolate_omd_data):
     import pytest
 

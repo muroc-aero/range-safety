@@ -799,6 +799,23 @@ class MultiSource:
                 studies.extend(src.list_studies())
             except Exception:  # noqa: BLE001 - a bad source must not break the list
                 continue
+        # Collapse a study-layer study's omd footprint into its single studyfs
+        # case-table entry. The omd source lists every plan as its own "study",
+        # so a study run through hangar.sdk.study otherwise shows up as N+1
+        # extra rows: one legacy grouping (omd plan id == study id) plus one
+        # per case plan (named ``{study_id}--{case_id}`` by the omd runner).
+        # Those are reachable via the case table's run links; hiding them here
+        # leaves the proper spreadsheet view as the only selector entry.
+        studyfs_ids = {s["study_id"] for s in studies
+                       if s.get("source") == "studyfs" and s.get("study_id")}
+        if studyfs_ids:
+            def _is_study_footprint(s: dict) -> bool:
+                if s.get("source") != "omd":
+                    return False
+                sid = s.get("study_id") or ""
+                # legacy grouping duplicate, or a per-case plan of the study
+                return sid in studyfs_ids or sid.split("--", 1)[0] in studyfs_ids
+            studies = [s for s in studies if not _is_study_footprint(s)]
         # Scope to the authenticated viewer (ownerless entries stay visible).
         studies = [s for s in studies if self._can_see(s.get("owner") or "")]
         # Newest first (by last-updated timestamp), so the most recent

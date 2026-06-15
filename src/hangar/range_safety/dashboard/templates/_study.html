@@ -68,6 +68,22 @@
   {% endfor %}
   </tbody>
 </table>
+
+{# Study-level trade grids: 2-axis heatmaps over the whole case table, lazily
+   rendered from the runner's study_plots (omd). Only shown when the study has
+   exactly two numeric axes and numeric outputs, so the list is non-empty. The
+   gallery is the same widget as the per-run Plots panel, pointed at the
+   study-plot endpoint and given a paper/contour style toggle. #}
+{% if data.study_plot_types %}
+<div class="group-label">Trade-space plots</div>
+<div data-plot-gallery
+     data-run-id="{{ data.key }}"
+     data-endpoint="/api/study-plots"
+     data-types='{{ data.study_plot_types | tojson }}'
+     data-styles='["paper", "contour"]'>
+  <div class="empty">Loading plots&hellip;</div>
+</div>
+{% endif %}
 </div>
 
 {% else %}

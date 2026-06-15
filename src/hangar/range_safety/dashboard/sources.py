@@ -195,6 +195,16 @@ class OmdSource(ReadModel):
             )
         return _Path(path).read_bytes()
 
+    # Study-level (2-axis trade grid) plots are a study-source concept; a
+    # plain plan/run source offers none.
+    def study_plot_types(self, study_id: str) -> list[str]:
+        return []
+
+    def study_plot_png(self, study_id: str, plot_type: str,
+                       style: str = "paper") -> bytes:
+        raise plot_adapter.PlotUnavailable(
+            "study-level plots are only available for study-layer studies")
+
     @staticmethod
     def _cheap_state(types: set) -> str:
         # Rough state for the selector from entity-type presence alone (no
@@ -527,6 +537,14 @@ class SdkSessionSource:
     def plot_png(self, run_id: str, plot_type: str) -> bytes:
         return plot_adapter.plot_png(run_id, plot_type)
 
+    def study_plot_types(self, study_id: str) -> list[str]:
+        return []
+
+    def study_plot_png(self, study_id: str, plot_type: str,
+                       style: str = "paper") -> bytes:
+        raise plot_adapter.PlotUnavailable(
+            "study-level plots are only available for study-layer studies")
+
 
 class StudyFsSource:
     """Study source over the SDK study store (``hangar_data/studies/``).
@@ -681,6 +699,10 @@ class StudyFsSource:
             "progress": store.status_summary(state),
             "param_keys": param_keys,
             "output_keys": output_keys,
+            # Names of the 2-axis trade grids renderable for this study (empty
+            # unless it has exactly two numeric axes with numeric outputs); the
+            # study view embeds them in a lazy gallery, same as run plots.
+            "study_plot_types": self.study_plot_types(study_id),
             "cases": [
                 {
                     "case_id": e["case_id"],
@@ -753,6 +775,38 @@ class StudyFsSource:
 
     def plot_png(self, run_id: str, plot_type: str) -> bytes:
         return self._runner_source().plot_png(run_id, plot_type)
+
+    # -- study-level plots (2-axis trade grids over the case table) ----------
+    # Unlike the run-scoped plots above, these render across the whole study's
+    # cases.csv (one PNG per output panel), so they live on the study source
+    # rather than delegating to a single run. The omd study_plots module owns
+    # the provider policy and the 2-axis gate.
+
+    def study_plot_types(self, study_id: str) -> list[str]:
+        try:
+            from hangar.omd.study_plots import study_plot_types  # noqa: PLC0415
+        except Exception:  # noqa: BLE001 - omd not installed -> no study plots
+            return []
+        return study_plot_types(study_id)
+
+    def study_plot_png(self, study_id: str, plot_type: str,
+                       style: str = "paper") -> bytes:
+        try:
+            from hangar.omd.study_plots import plot_study  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001
+            raise plot_adapter.PlotUnavailable(
+                "study trade-grid plots need the omd package") from exc
+        if style not in ("paper", "contour"):
+            style = "paper"
+        try:
+            result = plot_study(study_id, plot_types=[plot_type], style=style)
+        except ValueError as exc:
+            raise plot_adapter.PlotUnavailable(str(exc)) from exc
+        path = (result.get("saved") or {}).get(plot_type)
+        if not path or not _Path(path).exists():
+            raise plot_adapter.PlotUnavailable(
+                f"no {plot_type!r} study plot for study {study_id!r}")
+        return _Path(path).read_bytes()
 
 
 class MultiSource:
@@ -904,3 +958,16 @@ class MultiSource:
     def plot_png(self, run_key: str, plot_type: str) -> bytes:
         src, ident = self._src(run_key)
         return src.plot_png(ident, plot_type)
+
+    # -- study-scoped plots (trade grids) ---------------------------------
+
+    def study_plot_types(self, study_key: str) -> list[str]:
+        self.authorize_study(study_key)
+        src, ident = self._src(study_key)
+        return src.study_plot_types(ident)
+
+    def study_plot_png(self, study_key: str, plot_type: str,
+                       style: str = "paper") -> bytes:
+        self.authorize_study(study_key)
+        src, ident = self._src(study_key)
+        return src.study_plot_png(ident, plot_type, style)

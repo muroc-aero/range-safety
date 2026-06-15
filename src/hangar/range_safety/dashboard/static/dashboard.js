@@ -204,6 +204,10 @@
   function renderGallery(container) {
     var runId = container.getAttribute("data-run-id");
     var types = JSON.parse(container.getAttribute("data-types") || "[]");
+    // Run plots default to /api/plots; the study panel passes its own
+    // endpoint and an optional style list (paper/contour) for a 2nd selector.
+    var endpoint = container.getAttribute("data-endpoint") || "/api/plots";
+    var styles = JSON.parse(container.getAttribute("data-styles") || "[]");
     if (!types.length) {
       container.innerHTML = '<div class="empty">No plot types available for this run ' +
         "(no rendered artifact, or plot backend not installed).</div>";
@@ -217,6 +221,17 @@
     controls.className = "plot-controls";
     controls.appendChild(document.createTextNode("Plot type: "));
     controls.appendChild(sel);
+
+    var styleSel = null;
+    if (styles.length) {
+      styleSel = document.createElement("select");
+      styles.forEach(function (s) {
+        var o = document.createElement("option"); o.value = s; o.textContent = s; styleSel.appendChild(o);
+      });
+      controls.appendChild(document.createTextNode("  Style: "));
+      controls.appendChild(styleSel);
+    }
+
     var imgWrap = document.createElement("div");
     var note = document.createElement("div");
 
@@ -231,9 +246,12 @@
         note.textContent = "Plot '" + t + "' could not be rendered for this run.";
       };
       img.onload = function () { imgWrap.innerHTML = ""; imgWrap.appendChild(img); };
-      img.src = "/api/plots/" + encodeURIComponent(runId) + "/" + encodeURIComponent(t);
+      var url = endpoint + "/" + encodeURIComponent(runId) + "/" + encodeURIComponent(t);
+      if (styleSel) url += "?style=" + encodeURIComponent(styleSel.value);
+      img.src = url;
     }
     sel.addEventListener("change", function () { load(sel.value); });
+    if (styleSel) styleSel.addEventListener("change", function () { load(sel.value); });
     container.innerHTML = "";
     container.appendChild(controls);
     container.appendChild(imgWrap);

@@ -151,6 +151,24 @@ async def plot_image(request):
     return Response(content=png, media_type="image/png")
 
 
+async def study_plot_type_list(request):
+    study_id = request.path_params["study_id"]
+    return JSONResponse(await _query(
+        lambda: _read_model(request).study_plot_types(study_id)))
+
+
+async def study_plot_image(request):
+    study_id = request.path_params["study_id"]
+    plot_type = request.path_params["plot_type"]
+    style = request.query_params.get("style") or "paper"
+    try:
+        png = await _query(
+            lambda: _read_model(request).study_plot_png(study_id, plot_type, style))
+    except plot_adapter.PlotUnavailable as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    return Response(content=png, media_type="image/png")
+
+
 # ---------------------------------------------------------------------------
 # Shell + server-rendered view fragments
 # ---------------------------------------------------------------------------
@@ -328,6 +346,8 @@ def _content_routes() -> list[tuple[str, str, object]]:
         ("/api/report/{plan_id}", "report", report),
         ("/api/plots/{run_id}", "plot_type_list", plot_type_list),
         ("/api/plots/{run_id}/{plot_type}", "plot_image", plot_image),
+        ("/api/study-plots/{study_id}", "study_plot_type_list", study_plot_type_list),
+        ("/api/study-plots/{study_id}/{plot_type}", "study_plot_image", study_plot_image),
     ]
 
 

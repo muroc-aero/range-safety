@@ -457,6 +457,73 @@ def test_app_plot_image_503_when_no_artifact(isolate_omd_data):
     assert "error" in resp.json()
 
 
+def _seed_grid_study(root: Path, study_id: str = "grid-study") -> str:
+    """Seed a 2-axis studyfs study (study.yaml + state + case plan) on disk.
+
+    Mirrors what the omd study runner leaves behind, so the dashboard's
+    study-plot path (delegating to hangar.omd.study_plots) can render a
+    generic trade grid without an OpenMDAO run. Returns the studyfs key.
+    """
+    import json
+
+    sdir = root / "studies" / study_id
+    (sdir / "cases" / "c0").mkdir(parents=True)
+    spec = {
+        "metadata": {"id": study_id, "name": "grid", "version": 1},
+        "defaults": {"runner": "omd",
+                     "spec": {"plan": "base/plan.yaml", "mode": "analysis"}},
+        "cases": [{"matrix": {
+            "id_template": "x{x:g}",
+            "axes": {"x": {"values": [1.0, 2.0]}, "y": {"values": [1.0, 2.0]}},
+            "bind": {"x": ["operating_points.x"], "y": ["operating_points.y"]},
+        }}],
+    }
+    (sdir / "study.yaml").write_text(yaml.safe_dump(spec))
+    (sdir / "cases" / "c0" / "plan.yaml").write_text(yaml.safe_dump(
+        {"components": [{"id": "m", "type": "paraboloid/Paraboloid"}]}))
+    cases = {f"k{i}": {
+        "case_id": f"c{i}", "runner": "omd",
+        "params": {"x": x, "y": y}, "status": "converged",
+        "outputs": {"f_xy": float(i)}, "in_spec": True,
+    } for i, (x, y) in enumerate([(1.0, 1.0), (2.0, 1.0), (1.0, 2.0), (2.0, 2.0)])}
+    state = {"study_id": study_id, "version": 1, "owner": "",
+             "created_at": "t", "updated_at": "t", "cases": cases}
+    (sdir / "state.json").write_text(json.dumps(state))
+    return f"studyfs:{study_id}"
+
+
+def test_study_plot_routes_and_panel(isolate_omd_data):
+    key = _seed_grid_study(isolate_omd_data)
+    client = TestClient(app)
+
+    # JSON list: a 2-axis study with no provider -> the generic "grid".
+    listing = client.get(f"/api/study-plots/{key}")
+    assert listing.status_code == 200 and listing.json() == ["grid"]
+
+    # The PNG renders on demand (omd installed in the test env).
+    img = client.get(f"/api/study-plots/{key}/grid")
+    assert img.status_code == 200
+    assert img.headers["content-type"] == "image/png"
+    assert img.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    # contour style is accepted too.
+    assert client.get(f"/api/study-plots/{key}/grid?style=contour").status_code == 200
+
+    # The study view embeds the lazy gallery pointed at the study endpoint.
+    frag = client.get(f"/view/study/{key}")
+    assert frag.status_code == 200
+    assert 'data-endpoint="/api/study-plots"' in frag.text
+    assert "Trade-space plots" in frag.text
+
+
+def test_study_plot_list_empty_for_non_grid_study(isolate_omd_data):
+    # The legacy plan-grouping study (omd source) offers no trade grids.
+    _seed_full_study(isolate_omd_data)
+    client = TestClient(app)
+    resp = client.get("/api/study-plots/omd:wings")
+    assert resp.status_code == 200 and resp.json() == []
+
+
 # ---------------------------------------------------------------------------
 # Per-user study scoping (dashboard OIDC)
 # ---------------------------------------------------------------------------

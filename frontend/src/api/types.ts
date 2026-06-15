@@ -29,6 +29,33 @@ export interface StudyListItem {
 
 export type Coverage = 'populated' | 'thin' | 'absent' | string;
 
+export interface ServerStatus {
+  name: string;
+  url: string | null;
+  reachable: boolean;
+  status_code: number | null;
+  latency_ms: number;
+  detail?: string;
+  error?: string;
+}
+
+export interface MachineState {
+  id: string;
+  label: string;
+}
+
+export interface FeedbackEdge {
+  from: string;
+  to: string;
+  trigger: string;
+}
+
+export interface MachineDef {
+  states: MachineState[];
+  forward_edges: { from: string; to: string }[];
+  feedback_edges: FeedbackEdge[];
+}
+
 export interface StateProjection {
   current: LifecycleState | string;
   confidence: number;
@@ -206,6 +233,53 @@ export interface Conclusion {
   narrative?: string;
   metrics?: unknown[];
   requirements?: unknown[];
+}
+
+// -- study (case table + grouping) ------------------------------------------
+
+export interface StudyCase {
+  case_id: string;
+  runner?: string;
+  source?: string;
+  params: Record<string, unknown>;
+  status?: string;
+  run_ref?: string | null;
+  plan_key?: string | null;
+  outputs: Record<string, number>;
+  wall_time_s?: number | null;
+  error?: string | null;
+}
+
+export interface StudyProgress {
+  done: number;
+  total: number;
+  version?: number | null;
+  counts: Record<string, number>;
+  mean_case_wall_s?: number | null;
+}
+
+export interface StudyMember {
+  plan_id: string;
+  version: number | null;
+  name: string | null;
+  current_state: string;
+  objective: string | null;
+  metrics: Record<string, number>;
+}
+
+export interface StudyView {
+  study_id: string;
+  key?: string;
+  // studyfs (case table)
+  progress?: StudyProgress;
+  param_keys?: string[];
+  output_keys?: string[];
+  study_plot_types?: string[];
+  cases?: StudyCase[];
+  // omd grouping (lineage)
+  members?: StudyMember[];
+  metric_keys?: string[];
+  graph?: Graph;
 }
 
 export interface ReportView {

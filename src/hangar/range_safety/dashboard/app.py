@@ -114,6 +114,51 @@ async def runs(request):
     return JSONResponse(await _query(lambda: _read_model(request).list_runs(study_key)))
 
 
+def _probe(name: str, url: str) -> dict:
+    """GET ``url`` with a short timeout; report real reachability (never data
+    presence). Used by the servers view to show actual endpoint status."""
+    import time
+    import urllib.request
+
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:  # noqa: S310 - operator-configured
+            code = resp.status
+        latency = round((time.monotonic() - started) * 1000)
+        return {"name": name, "url": url, "reachable": code < 500,
+                "status_code": code, "latency_ms": latency}
+    except Exception as exc:  # noqa: BLE001 - any failure is "unreachable"
+        latency = round((time.monotonic() - started) * 1000)
+        return {"name": name, "url": url, "reachable": False,
+                "status_code": None, "latency_ms": latency, "error": str(exc)}
+
+
+async def servers(request):
+    """Reachability of the dashboard and any configured peer servers.
+
+    Status is based on whether each endpoint actually responds, NOT on whether
+    it has recorded data. The dashboard itself is trivially up (it is serving
+    this request). Peers are read from ``RS_DASHBOARD_SERVERS`` -- a JSON list
+    of ``{"name", "url"}`` health URLs (e.g. the hangar tool servers); each is
+    probed with a short timeout in the threadpool.
+    """
+    import json as _json
+
+    out = [{"name": "dashboard", "url": None, "reachable": True,
+            "status_code": 200, "latency_ms": 0, "detail": "serving this request"}]
+    raw = os.environ.get("RS_DASHBOARD_SERVERS") or "[]"
+    try:
+        peers = _json.loads(raw)
+    except (ValueError, TypeError):
+        peers = []
+    probed = await run_in_threadpool(
+        lambda: [_probe(str(p.get("name") or p.get("url")), str(p.get("url")))
+                 for p in peers if isinstance(p, dict) and p.get("url")]
+    )
+    return JSONResponse(out + probed)
+
+
 async def state(request):
     plan_id = request.path_params["plan_id"]
     return JSONResponse(await _query(lambda: _read_model(request).get_state(plan_id)))
@@ -401,6 +446,7 @@ def _content_routes() -> list[tuple[str, str, object]]:
         ("/api/machine", "machine", machine),
         ("/api/studies", "studies", studies),
         ("/api/runs/{study_key}", "runs", runs),
+        ("/api/servers", "servers", servers),
         ("/api/state/{plan_id}", "state", state),
         ("/api/requirements/{plan_id}", "requirements", requirements),
         ("/api/plan/{plan_id}", "plan", plan),

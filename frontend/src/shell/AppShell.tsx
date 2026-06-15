@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { BrandMark, StatusPill } from '../design';
+import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import { useCurrentStudy } from './currentStudy';
 
 /* Persistent product chrome: 54px top bar (brand + breadcrumb + status) and a
@@ -29,6 +31,10 @@ export function AppShell() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { study } = useCurrentStudy();
+  const { data: servers } = useAsync(() => api.servers(), []);
+  const reachable = servers ? servers.filter((s) => s.reachable).length : null;
+  const total = servers?.length ?? 0;
+  const allUp = reachable != null && reachable === total;
 
   const studyTo = study ? `/study/${encodeURIComponent(study.key)}` : '/';
   const provTo = study
@@ -88,7 +94,15 @@ export function AppShell() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <StatusPill status="ok">dashboard online</StatusPill>
+          <button onClick={() => navigate('/servers')} style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}>
+            <StatusPill status={reachable == null ? 'idle' : allUp ? 'ok' : 'warn'} live={allUp}>
+              {reachable == null
+                ? 'probing…'
+                : total > 1
+                  ? `${reachable}/${total} reachable`
+                  : 'dashboard online'}
+            </StatusPill>
+          </button>
         </div>
       </header>
 

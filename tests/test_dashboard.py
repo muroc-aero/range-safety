@@ -472,6 +472,22 @@ def test_app_spa_endpoints(isolate_omd_data):
     assert any(r["run_id"] == "omd:run-1" for r in runs)
 
 
+def test_app_servers_reachability(isolate_omd_data, monkeypatch):
+    # The servers view reports real endpoint reachability, not data presence.
+    # The dashboard itself is always reachable; a bogus peer is unreachable.
+    _seed_full_study(isolate_omd_data)
+    monkeypatch.setenv(
+        "RS_DASHBOARD_SERVERS",
+        '[{"name": "bogus", "url": "http://127.0.0.1:9/healthz"}]',
+    )
+    client = TestClient(app)
+    servers = client.get("/api/servers").json()
+    by_name = {s["name"]: s for s in servers}
+    assert by_name["dashboard"]["reachable"] is True
+    assert by_name["bogus"]["reachable"] is False
+    assert by_name["bogus"]["status_code"] is None
+
+
 def test_app_plot_image_503_when_no_artifact(isolate_omd_data):
     _seed_full_study(isolate_omd_data)
     client = TestClient(app)

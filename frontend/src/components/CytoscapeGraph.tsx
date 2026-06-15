@@ -79,6 +79,11 @@ function buildStylesheet(): StyleRule[] {
     { selector: 'node[kind="conclusion"][verdict="partial"]', style: { 'background-color': C.amber50, 'border-color': C.amber600 } as never },
     // study members carry a lifecycle state, not a kind accent
     { selector: 'node[kind="study_member"]', style: kind(C.panel, C.blue400, { width: 140, height: 40 }) as never },
+    { selector: 'node[current_state="gather_requirements"]', style: { 'background-color': '#f1edf9', 'border-color': '#8a6fc4' } as never },
+    { selector: 'node[current_state="planning"]', style: { 'background-color': C.blue50, 'border-color': C.blue700 } as never },
+    { selector: 'node[current_state="executing"]', style: { 'background-color': C.cyan50, 'border-color': C.cyan600 } as never },
+    { selector: 'node[current_state="verifying"]', style: { 'background-color': C.amber50, 'border-color': C.amber600 } as never },
+    { selector: 'node[current_state="concluding"]', style: { 'background-color': C.green50, 'border-color': C.green600 } as never },
     // failure / selection
     { selector: 'node[status="failed"]', style: { 'border-width': 2.5, 'border-color': C.red600, 'background-color': C.red50 } as never },
     { selector: 'node:selected', style: { 'border-width': 2.5, 'border-color': C.blue700 } as never },
@@ -101,7 +106,7 @@ function buildStylesheet(): StyleRule[] {
 function layoutFor(style: GraphStyle): cytoscape.LayoutOptions {
   // plan-detail reads left-to-right (problem structure); provenance / reasoning
   // read top-to-bottom (lineage over time).
-  const rankDir = style === 'plan_detail' ? 'LR' : 'TB';
+  const rankDir = style === 'plan_detail' || style === 'study' ? 'LR' : 'TB';
   return {
     name: 'dagre',
     rankDir,

@@ -2,6 +2,7 @@
    Same origin in production (the SPA is served by the Starlette app); proxied
    to a local uvicorn in dev (see vite.config.ts). */
 import type {
+  MachineDef,
   PlanView,
   ReasoningView,
   ReportView,
@@ -10,8 +11,10 @@ import type {
   RunKey,
   RunRef,
   StateProjection,
+  ServerStatus,
   StudyKey,
   StudyListItem,
+  StudyView,
 } from './types';
 
 export class ApiError extends Error {
@@ -80,6 +83,14 @@ export const api = {
   listRuns(studyKey: StudyKey): Promise<RunRef[]> {
     return getJSON<RunRef[]>(`/runs/${seg(studyKey)}`);
   },
+  servers(): Promise<ServerStatus[]> {
+    return getJSON<ServerStatus[]>('/servers');
+  },
+
+  // -- machine definition (static: states + forward/feedback edges) ---------
+  machine(): Promise<MachineDef> {
+    return getJSON<MachineDef>('/machine');
+  },
 
   // -- study-scoped views ---------------------------------------------------
   state(key: StudyKey): Promise<StateProjection> {
@@ -93,6 +104,9 @@ export const api = {
   },
   reasoning(key: StudyKey, focus?: string): Promise<ReasoningView> {
     return getJSON<ReasoningView>(`/reasoning/${seg(key)}${qs({ focus })}`);
+  },
+  study(key: StudyKey): Promise<StudyView> {
+    return getJSON<StudyView>(`/study/${seg(key)}`);
   },
   report(key: StudyKey, version?: number): Promise<ReportView> {
     return getJSON<ReportView>(`/report/${seg(key)}${qs({ version })}`);

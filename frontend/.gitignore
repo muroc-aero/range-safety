@@ -3,3 +3,8 @@ dist/
 *.local
 .vite/
 *.tsbuildinfo
+
+# The package's Python .gitignore excludes `lib/` (venv dirs); that wrongly
+# catches our SPA source dir. Re-include it.
+!src/lib/
+!src/lib/**

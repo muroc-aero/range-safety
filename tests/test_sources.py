@@ -360,11 +360,11 @@ def test_shell_filters_by_source_and_text(isolate_omd_data):
     _seed_sdk_session(tmp)
 
     client = TestClient(app)
-    # Source filter: omd only -> no [sdk] options.
-    omd_only = client.get("/?src=omd").text
-    assert "[omd]" in omd_only and "[sdk]" not in omd_only
-    # Text filter: substring on the analysis id.
-    filtered = client.get("/?q=wing").text
+    # The study list (now the SPA's /api/studies endpoint) applies the source +
+    # substring filters the old server-rendered selector did.
+    omd_only = client.get("/api/studies?src=omd").json()
+    assert omd_only and all(s["source"] == "omd" for s in omd_only)
+    filtered = {s["study_id"] for s in client.get("/api/studies?q=wing").json()}
     assert "wing-opt" in filtered and "engine-sizing" not in filtered
 
 

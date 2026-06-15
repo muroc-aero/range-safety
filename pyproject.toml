@@ -23,6 +23,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hangar"]
+# The built SPA lives under a gitignored dir (hashed assets, produced by the
+# frontend build / Docker frontend stage). Force-include it in the wheel when
+# present so the image ships the React UI; absent, the htmx shell is served.
+artifacts = ["src/hangar/range_safety/dashboard/static/spa/**"]
 
 [tool.uv.sources]
 hangar-sdk = { workspace = true }

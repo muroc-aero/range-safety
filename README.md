@@ -65,11 +65,17 @@ The dashboard is a Starlette app. Run it locally with uvicorn:
 uvicorn hangar.range_safety.dashboard.app:app --reload
 ```
 
-It exposes two parallel surfaces over the same read model: `/api/<name>`
-returns plain JSON (the API-first contract), and `/` plus `/view/<name>` serve
-the dashboard shell and server-rendered htmx fragments. Graph and plot
-fragments embed their data as JSON and hydrate client-side (Cytoscape for
-graphs, a gallery for plots). There is no build step.
+The primary UI is a React 18 + Vite + TypeScript SPA (`frontend/`, built into
+`dashboard/static/spa/`) served at `/`; it talks only to the `/api/<name>`
+read-model endpoints. The same API still backs the legacy server-rendered htmx
+fragments at `/view/<name>`, which remain as a fallback: when the SPA has not
+been built (a source checkout without `npm run build`), `/` serves the htmx
+shell instead. Graphs render with Cytoscape (light Instrument palette in the
+SPA), plots as matplotlib PNGs from `/api/plots/...`.
+
+See `frontend/README.md` for the SPA architecture and dev/build commands. The
+Docker image builds the SPA in a `node` stage; a plain `pip install` from a
+source tree ships only the htmx fallback unless the SPA was built first.
 
 Studies are keyed `{source}:{id}`; the shell aggregates every source. The omd
 path reads plan provenance and renders plots through

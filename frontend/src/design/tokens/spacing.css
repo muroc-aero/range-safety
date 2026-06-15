@@ -1,0 +1,46 @@
+/* =============================================================
+   LAKESIDE AI — SPACING, SIZING & RADII
+   8px base grid, aligned to the 26px drafting grid used on paper
+   surfaces (multiples chosen to feel like graph-paper increments).
+   ============================================================= */
+
+:root{
+  /* ---------- SPACING SCALE ---------- */
+  --space-0:0;
+  --space-1:0.25rem;   /* 4 */
+  --space-2:0.5rem;    /* 8 */
+  --space-3:0.75rem;   /* 12 */
+  --space-4:1rem;      /* 16 */
+  --space-5:1.5rem;    /* 24 */
+  --space-6:2rem;      /* 32 */
+  --space-7:2.5rem;    /* 40 */
+  --space-8:3.5rem;    /* 56 */
+  --space-9:5rem;      /* 80 */
+  --space-10:7.5rem;   /* 120 */
+
+  /* ---------- RADII (small, mechanical — never pill-soft) ---------- */
+  --radius-0:0;        /* drafting / title-block edges are square */
+  --radius-sm:3px;     /* default control / chip */
+  --radius-md:6px;     /* card / panel */
+  --radius-lg:8px;     /* large panel / dialog */
+  --radius-pill:999px; /* status pills only */
+
+  /* ---------- BORDER WIDTHS ---------- */
+  --bw-hair:1px;       /* dividers, panel borders */
+  --bw-rule:1.5px;     /* drafting rules, primary outlines */
+  --bw-accent:2px;     /* left-marker on callouts/decisions */
+
+  /* ---------- DRAFTING GRID ---------- */
+  --grid-unit:26px;    /* graph-paper increment on paper surfaces */
+
+  /* ---------- LAYOUT CONTAINERS ---------- */
+  --container-prose:64rem;   /* 1024 — authored docs */
+  --container-site:75rem;    /* 1200 — marketing */
+  --container-app:90rem;     /* 1440 — product shell */
+
+  /* ---------- CONTROL SIZING ---------- */
+  --control-h-sm:30px;
+  --control-h-md:38px;
+  --control-h-lg:46px;
+  --tap-min:44px;            /* minimum hit target */
+}

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { StudyCase, StudyView } from '../api/types';
 import { useAsync } from '../hooks/useAsync';
@@ -164,4 +164,10 @@ export function StudyOverview({ studyKey }: { studyKey: string }) {
       )}
     </div>
   );
+}
+
+/* Route wrapper: study-scope deep link (omd grouping or studyfs case study). */
+export function StudyScopeRoute() {
+  const { studyKey } = useParams();
+  return <StudyOverview studyKey={decodeURIComponent(studyKey ?? '')} />;
 }

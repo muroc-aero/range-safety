@@ -3,6 +3,7 @@
    to a local uvicorn in dev (see vite.config.ts). */
 import type {
   MachineDef,
+  PlanDiffView,
   PlanView,
   ReasoningView,
   ReportView,
@@ -101,6 +102,9 @@ export const api = {
   },
   plan(key: StudyKey, version?: number): Promise<PlanView> {
     return getJSON<PlanView>(`/plan/${seg(key)}${qs({ version })}`);
+  },
+  planDiff(key: StudyKey, versionA?: number, versionB?: number): Promise<PlanDiffView> {
+    return getJSON<PlanDiffView>(`/plan-diff/${seg(key)}${qs({ version_a: versionA, version_b: versionB })}`);
   },
   reasoning(key: StudyKey, focus?: string): Promise<ReasoningView> {
     return getJSON<ReasoningView>(`/reasoning/${seg(key)}${qs({ focus })}`);

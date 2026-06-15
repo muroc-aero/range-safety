@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
 import type { Core, ElementDefinition } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
@@ -24,7 +24,7 @@ cytoscape.use(dagre as never);
 // -- palette (mirrors tokens/colors.css; cytoscape needs concrete values) ---
 const C = {
   panel: '#ffffff', subtle: '#f6f8fa', line: '#dbe1e7',
-  ink700: '#1e2a36', ink500: '#5b6976', ink300: '#8b97a3',
+  ink700: '#1e2a36', ink500: '#5b6976', ink300: '#8b97a3', ink200: '#aab4bd',
   blue700: '#15487a', blue600: '#1b5e9e', blue400: '#3b82c4', blue50: '#eaf1f8',
   green700: '#197a43', green600: '#1f9d55', green50: '#e7f4ec',
   cyan600: '#1f8aa8', cyan50: '#e2f1f5',
@@ -100,7 +100,67 @@ function buildStylesheet(): StyleRule[] {
         'text-background-padding': '1px',
       } as never,
     },
+    // per-relation edge colors (ports dashboard.js, recoloured to light)
+    edge('wasGeneratedBy', C.blue600), edge('used', C.cyan600),
+    edge('wasDerivedFrom', C.blue400, { 'line-style': 'dashed', width: 2 }),
+    edge('partOf', C.ink200, { 'line-style': 'dotted', 'target-arrow-shape': 'none', label: '' }),
+    edge('justifies', C.amber600, { width: 2 }),
+    edge('satisfies', C.green600, { width: 2.6 }),
+    edge('violates', C.red600, { width: 2.6 }),
+    edge('verifies', '#3f8f7a', { width: 2 }),
+    edge('assesses', C.cyan600, { width: 2 }),
+    edge('informs', C.green600), edge('decides', '#8a6fc4'),
+    edge('cross_tool', '#d97a2e', { 'line-style': 'dashed' }),
+    // plan-detail relations
+    edge('acts_on', C.blue400, { width: 2.4 }), edge('bounds', C.green600),
+    edge('traces_to', '#8a6fc4', { 'line-style': 'dotted' }),
+    edge('flow_to', '#c0801f', { width: 2.4 }), edge('has_architecture', C.amber600),
   ];
+}
+
+function edge(relation: string, color: string, extra: Record<string, unknown> = {}): StyleRule {
+  return {
+    selector: `edge[relation="${relation}"]`,
+    style: { 'line-color': color, 'target-arrow-color': color, ...extra },
+  };
+}
+
+// -- legend (per graph style) -----------------------------------------------
+
+const LEGENDS: Record<string, { label: string; color: string }[]> = {
+  provenance: [
+    { label: 'satisfies', color: C.green600 },
+    { label: 'violates', color: C.red600 },
+    { label: 'verifies', color: '#3f8f7a' },
+    { label: 'justifies', color: C.amber600 },
+    { label: 'assesses', color: C.cyan600 },
+  ],
+  session: [
+    { label: 'used', color: C.cyan600 },
+    { label: 'generated', color: C.blue600 },
+    { label: 'decides', color: '#8a6fc4' },
+  ],
+  plan_detail: [
+    { label: 'plan', color: C.blue700 },
+    { label: 'design var', color: C.green600 },
+    { label: 'constraint', color: C.amber600 },
+    { label: 'objective', color: C.blue600 },
+    { label: 'decision', color: '#9a5d10' },
+  ],
+};
+
+export function GraphLegend({ graphStyle = 'provenance' }: { graphStyle?: GraphStyle }) {
+  const items = LEGENDS[graphStyle] ?? LEGENDS.provenance;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '8px 0' }}>
+      {items.map((l) => (
+        <span key={l.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-400)' }}>
+          <span style={{ width: 14, height: 2.5, background: l.color, borderRadius: 1 }} />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function layoutFor(style: GraphStyle): cytoscape.LayoutOptions {
@@ -128,6 +188,7 @@ export interface CytoscapeGraphProps {
 export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460, onSelect }: CytoscapeGraphProps) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -145,12 +206,12 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
       minZoom: 0.2,
     });
     cyRef.current = cy;
-    if (onSelect) {
-      cy.on('tap', 'node', (evt) => {
-        const node = evt.target;
-        onSelect(node.id(), node.data());
-      });
-    }
+    cy.on('tap', 'node', (evt) => {
+      const node = evt.target;
+      setSelected(node.data());
+      onSelect?.(node.id(), node.data());
+    });
+    cy.on('tap', (evt) => { if (evt.target === cy) setSelected(null); });
     cy.fit(undefined, 24);
     return () => {
       cy.destroy();
@@ -159,12 +220,39 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
   }, [graph, graphStyle, onSelect]);
 
   return (
-    <div
-      ref={ref}
-      style={{
-        width: '100%', height, background: C.panel,
-        borderRadius: 'var(--radius-sm)',
-      }}
-    />
+    <div style={{ position: 'relative', width: '100%', height, background: C.panel, borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+      <div ref={ref} style={{ width: '100%', height: '100%' }} />
+      {selected ? <NodeInspector data={selected} onClose={() => setSelected(null)} /> : null}
+    </div>
+  );
+}
+
+function NodeInspector({ data, onClose }: { data: Record<string, unknown>; onClose: () => void }) {
+  const entries = Object.entries(data).filter(
+    ([k, v]) => k !== 'id' && k !== 'label' && v !== null && v !== undefined && v !== '',
+  );
+  return (
+    <div style={{
+      position: 'absolute', top: 0, right: 0, width: 280, maxWidth: '70%', height: '100%',
+      background: 'var(--app-panel)', borderLeft: '1px solid var(--app-line)',
+      boxShadow: 'var(--shadow-sm)', overflowY: 'auto', zIndex: 2,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--app-line)' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {String((data.label as string) || data.id || 'node').split('\n')[0]}
+        </span>
+        <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-400)' }}>close</button>
+      </div>
+      <div style={{ padding: '10px 14px' }}>
+        {entries.map(([k, v]) => (
+          <div key={k} style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-300)', marginBottom: 3 }}>{k}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-700)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+              {typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

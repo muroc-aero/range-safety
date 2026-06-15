@@ -8,11 +8,12 @@ import {
   Badge, Button, Callout, Card, DecisionCard, Select, SpecTable, StatCard, Tag,
 } from '../design';
 import { ErrorState, Loading, Empty } from '../components/Feedback';
-import { CytoscapeGraph } from '../components/CytoscapeGraph';
+import { CytoscapeGraph, GraphLegend } from '../components/CytoscapeGraph';
 import { Sparklines } from '../components/Sparkline';
 import { StateStrip } from '../components/StateStrip';
 import { RequirementsSection } from '../sections/RequirementsSection';
 import { ReportSection } from '../sections/ReportSection';
+import { PlanDiffSection } from '../sections/PlanDiffSection';
 import { StudyOverview } from './StudyOverview';
 import { useCurrentStudy } from '../shell/currentStudy';
 import { keyLabel, shortRun, splitKey } from '../lib/keys';
@@ -196,12 +197,35 @@ function FormulationSection({ studyKey }: { studyKey: string }) {
   if (loading) return <Loading label="loading formulation" />;
   if (error) return <ErrorState error={error} />;
   const sections = formulationSections(data?.plan);
-  if (!sections.length) return <Empty>This study has no structured plan formulation (sdk sessions carry their structure as the execution graph — see the provenance tab).</Empty>;
+  const graph = data?.graph;
+  const hasGraph = !!graph && graph.nodes.length > 0;
+  if (!sections.length && !hasGraph) {
+    return <Empty>This study has no structured plan formulation (sdk sessions carry their structure as the execution graph — see the provenance tab).</Empty>;
+  }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
-      {sections.map((s) => (
-        <Card key={s.title} title={s.title}><SpecTable rows={s.rows} /></Card>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {sections.length ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
+          {sections.map((s) => (
+            <Card key={s.title} title={s.title}><SpecTable rows={s.rows} /></Card>
+          ))}
+        </div>
+      ) : null}
+      {hasGraph ? (
+        <Card title="plan structure" headerRight={<GraphLegend graphStyle={data!.graph_style} />}>
+          <CytoscapeGraph graph={graph!} graphStyle={data!.graph_style || 'plan_detail'} height={460} />
+        </Card>
+      ) : null}
+      {data?.version != null && data.version > 1 ? (
+        <details>
+          <summary style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-400)' }}>
+            compare plan versions
+          </summary>
+          <div style={{ marginTop: 12 }}>
+            <Card><PlanDiffSection studyKey={studyKey} /></Card>
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -229,6 +253,11 @@ function DecisionsSection({ studyKey }: { studyKey: string }) {
             title={String(d.decision ?? d.decision_type ?? 'Decision')}
           >
             {String(d.reasoning ?? d.rationale ?? '')}
+            {d.selected_action != null ? (
+              <div style={{ marginTop: 6, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-400)' }}>
+                action: <span style={{ color: 'var(--ink-600)' }}>{String(d.selected_action)}</span>
+              </div>
+            ) : null}
           </DecisionCard>
         ))}
       </div>
@@ -280,7 +309,12 @@ function ProvenanceSection({ studyKey }: { studyKey: string }) {
           </button>
         }
       >
-        {empty ? <Empty>No provenance graph recorded for this study.</Empty> : <CytoscapeGraph graph={graph} graphStyle="provenance" height={420} />}
+        {empty ? <Empty>No provenance graph recorded for this study.</Empty> : (
+          <>
+            <GraphLegend graphStyle="provenance" />
+            <CytoscapeGraph graph={graph} graphStyle="provenance" height={420} />
+          </>
+        )}
       </Card>
     </div>
   );
@@ -332,6 +366,7 @@ function StudyPlanViewer({ studyKey }: { studyKey: string }) {
     | Record<string, unknown>
     | undefined;
   const version = state.data?.plan_version ?? plan.data?.version ?? null;
+  const groupStudy = typeof planName?.study === 'string' ? planName.study : null;
 
   // Pin as the current study for the rail + breadcrumb.
   useEffect(() => {
@@ -379,6 +414,9 @@ function StudyPlanViewer({ studyKey }: { studyKey: string }) {
                 style={{ maxWidth: 230 }}
                 title="select run"
               />
+            ) : null}
+            {groupStudy ? (
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/study-scope/${encodeURIComponent(`${source}:${groupStudy}`)}`)}>Study scope</Button>
             ) : null}
             <Button variant="secondary" size="sm" iconLeft={<GitFork size={14} />} onClick={() => navigate(`/provenance/${encodeURIComponent(studyKey)}`)}>Provenance</Button>
             {runKey ? (

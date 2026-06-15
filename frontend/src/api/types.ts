@@ -235,6 +235,23 @@ export interface Conclusion {
   requirements?: unknown[];
 }
 
+// -- plan diff --------------------------------------------------------------
+
+export interface PlanChange {
+  path: string;
+  action: string;
+  old?: unknown;
+  new?: unknown;
+}
+
+export interface PlanDiffView {
+  plan_id: StudyKey;
+  version_a: number | null;
+  version_b: number | null;
+  changes: PlanChange[];
+  summary: { added: number; removed: number; modified: number };
+}
+
 // -- study (case table + grouping) ------------------------------------------
 
 export interface StudyCase {

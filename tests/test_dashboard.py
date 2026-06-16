@@ -405,11 +405,13 @@ def test_app_view_fragments_render(isolate_omd_data):
     _seed_full_study(isolate_omd_data)
     client = TestClient(app)
 
-    # shell
+    # root: serves the React SPA shell when built, else the legacy htmx shell.
+    # The server-rendered /view/* fragments below (still the SPA's data source
+    # via /api and the fallback) are asserted directly.
     shell = client.get("/?plan_id=study-1&run_id=run-1")
     assert shell.status_code == 200
-    assert "/static/dashboard.js" in shell.text
-    assert 'hx-get="/view/requirements/study-1"' in shell.text
+    assert ('id="root"' in shell.text and "/static/spa/" in shell.text) \
+        or "/static/dashboard.js" in shell.text
 
     # state strip: concluding (primary verified + assessment present), with
     # the current-state class and the per-state coverage dots rendered.
@@ -446,6 +448,44 @@ def test_app_view_fragments_render(isolate_omd_data):
     # plot galleries render (types may be empty without an artifact backend)
     assert client.get("/view/visualization/run-1").status_code == 200
     assert client.get("/view/plots/run-1").status_code == 200
+
+
+def test_app_spa_endpoints(isolate_omd_data):
+    # The SPA's enumeration endpoints: a study list (newest-first, source/q
+    # filtered) and per-study run records, both keyed `{source}:{id}`.
+    _seed_full_study(isolate_omd_data)
+    client = TestClient(app)
+
+    studies = client.get("/api/studies").json()
+    assert isinstance(studies, list) and studies
+    keys = {s["key"] for s in studies}
+    assert "omd:study-1" in keys
+    one = next(s for s in studies if s["key"] == "omd:study-1")
+    assert one["source"] == "omd" and "current_state" in one
+
+    # source filter narrows to omd; a non-matching substring yields nothing.
+    assert all(s["source"] == "omd" for s in client.get("/api/studies?src=omd").json())
+    assert client.get("/api/studies?q=does-not-exist").json() == []
+
+    # run records are re-prefixed with the source so run-scoped routes dispatch.
+    runs = client.get("/api/runs/omd:study-1").json()
+    assert any(r["run_id"] == "omd:run-1" for r in runs)
+
+
+def test_app_servers_reachability(isolate_omd_data, monkeypatch):
+    # The servers view reports real endpoint reachability, not data presence.
+    # The dashboard itself is always reachable; a bogus peer is unreachable.
+    _seed_full_study(isolate_omd_data)
+    monkeypatch.setenv(
+        "RS_DASHBOARD_SERVERS",
+        '[{"name": "bogus", "url": "http://127.0.0.1:9/healthz"}]',
+    )
+    client = TestClient(app)
+    servers = client.get("/api/servers").json()
+    by_name = {s["name"]: s for s in servers}
+    assert by_name["dashboard"]["reachable"] is True
+    assert by_name["bogus"]["reachable"] is False
+    assert by_name["bogus"]["status_code"] is None
 
 
 def test_app_plot_image_503_when_no_artifact(isolate_omd_data):

@@ -10,6 +10,20 @@
 # packages). Mirrors packages/omd/Dockerfile so plot rendering matches omd
 # exactly (same recorder-based plotting + openaerostruct for OAS plots).
 
+# ---------------------------------------------------------------------------
+# Frontend stage: build the React SPA (the dashboard's primary UI). The Vite
+# build writes hashed assets into the Python package's static/spa dir; that
+# output is copied into the runtime image below. Source checkouts without this
+# build fall back to the legacy server-rendered htmx shell (app.py:spa_index).
+# ---------------------------------------------------------------------------
+FROM node:22-slim AS frontend
+WORKDIR /pkg/frontend
+COPY packages/range-safety/frontend/package.json packages/range-safety/frontend/package-lock.json ./
+RUN npm ci
+COPY packages/range-safety/frontend/ ./
+RUN npm run build
+# build output -> /pkg/src/hangar/range_safety/dashboard/static/spa (vite outDir)
+
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,6 +57,9 @@ RUN pip install --no-cache-dir --no-deps packages/omd && \
 # The dashboard itself + its web-server runtime deps. itsdangerous backs
 # Starlette's SessionMiddleware (OIDC session cookie); uvicorn serves it.
 COPY packages/range-safety/ packages/range-safety/
+# Built SPA from the frontend stage (overlays the gitignored static/spa dir).
+COPY --from=frontend /pkg/src/hangar/range_safety/dashboard/static/spa \
+    packages/range-safety/src/hangar/range_safety/dashboard/static/spa
 RUN pip install --no-cache-dir --no-deps packages/range-safety && \
     pip install --no-cache-dir "starlette>=0.37" "jinja2>=3.1" itsdangerous "uvicorn[standard]"
 

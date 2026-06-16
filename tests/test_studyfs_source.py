@@ -112,9 +112,9 @@ def test_finished_study_fragment_does_not_poll(isolate_omd_data):
 def test_shell_lists_studyfs_source(isolate_omd_data):
     _seed_study(done=1)
     client = TestClient(app)
-    resp = client.get("/", params={"src": "studyfs"})
+    resp = client.get("/api/studies", params={"src": "studyfs"})
     assert resp.status_code == 200
-    assert "demo-grid" in resp.text
+    assert "demo-grid" in {s["study_id"] for s in resp.json()}
 
 
 def test_run_scoped_views_delegate_to_omd(isolate_omd_data):

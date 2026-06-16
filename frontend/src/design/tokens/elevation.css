@@ -1,0 +1,41 @@
+/* =============================================================
+   LAKESIDE AI — ELEVATION, SHADOWS, MOTION
+   Restrained. Paper surfaces use almost no shadow (ink rules do
+   the structural work). App panels use soft, cool, low shadows —
+   instruments sit FLAT, never floating. Motion is quick & linear-
+   ish: this is precision equipment, not a playful consumer app.
+   ============================================================= */
+
+:root{
+  /* ---------- SHADOWS (cool, low, tight) ---------- */
+  --shadow-none:none;
+  --shadow-xs:0 1px 2px rgba(20,33,46,0.06);
+  --shadow-sm:0 1px 3px rgba(20,33,46,0.08), 0 1px 2px rgba(20,33,46,0.04);
+  --shadow-md:0 4px 12px -2px rgba(20,33,46,0.10), 0 2px 4px -2px rgba(20,33,46,0.06);
+  --shadow-lg:0 14px 32px -8px rgba(20,33,46,0.16), 0 4px 8px -4px rgba(20,33,46,0.08);
+  --shadow-pop:0 24px 60px -20px rgba(15,33,59,0.30);  /* dialogs / overlays */
+
+  /* paper surfaces: a single warm, faint drop only when truly raised */
+  --shadow-paper:0 12px 30px -16px rgba(40,34,20,0.22);
+
+  /* ---------- INNER / INSET ---------- */
+  --inset-field:inset 0 1px 2px rgba(20,33,46,0.06);
+
+  /* ---------- FOCUS ---------- */
+  --focus-shadow:0 0 0 3px var(--focus-ring);
+
+  /* ---------- MOTION ---------- */
+  --ease-standard:cubic-bezier(0.2,0,0,1); /* @kind other */ /* quick, decisive */
+  --ease-out:cubic-bezier(0.16,1,0.3,1);     /* @kind other */
+  --dur-fast:120ms;                          /* @kind other */
+  --dur-base:180ms;                          /* @kind other */
+  --dur-slow:260ms;                          /* @kind other */
+
+  /* ---------- HOVER / PRESS CONVENTIONS (documented as tokens) ----------
+     hover  : darken accent one step (--accent -> --accent-hover) OR
+              raise app panel bg to --surface-card / add --shadow-sm
+     press  : translateY(1px); no scale-bounce
+     overlays: --shadow-pop + 1px border, backdrop rgba(15,33,59,.32)   */
+  --overlay-scrim:rgba(15,33,59,0.32);
+  --press-shift:translateY(1px);             /* @kind other */
+}

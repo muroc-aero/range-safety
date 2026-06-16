@@ -34,7 +34,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -83,6 +83,80 @@ def _int_param(request, name):
 
 async def machine(request):
     return JSONResponse(await _query(lambda: _read_model(request).machine()))
+
+
+def _filter_studies(studies: list[dict], src: str, query: str) -> list[dict]:
+    """Source + case-insensitive substring filter (mirrors the shell selector)."""
+    if src in ("omd", "sdk", "studyfs"):
+        studies = [s for s in studies if s.get("source") == src]
+    if query:
+        ql = query.lower()
+        studies = [s for s in studies
+                   if ql in (s.get("study_id") or "").lower()
+                   or ql in (s.get("label") or "").lower()]
+    return studies
+
+
+async def studies(request):
+    """Study list for the SPA landing grid (newest-first, viewer-scoped)."""
+    src = request.query_params.get("src") or "all"
+    query = (request.query_params.get("q") or "").strip()
+
+    def _run():
+        return _filter_studies(_read_model(request).list_studies(), src, query)
+
+    return JSONResponse(await _query(_run))
+
+
+async def runs(request):
+    """Run records for a study key (newest-first), for the SPA run selector."""
+    study_key = request.path_params["study_key"]
+    return JSONResponse(await _query(lambda: _read_model(request).list_runs(study_key)))
+
+
+def _probe(name: str, url: str) -> dict:
+    """GET ``url`` with a short timeout; report real reachability (never data
+    presence). Used by the servers view to show actual endpoint status."""
+    import time
+    import urllib.request
+
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:  # noqa: S310 - operator-configured
+            code = resp.status
+        latency = round((time.monotonic() - started) * 1000)
+        return {"name": name, "url": url, "reachable": code < 500,
+                "status_code": code, "latency_ms": latency}
+    except Exception as exc:  # noqa: BLE001 - any failure is "unreachable"
+        latency = round((time.monotonic() - started) * 1000)
+        return {"name": name, "url": url, "reachable": False,
+                "status_code": None, "latency_ms": latency, "error": str(exc)}
+
+
+async def servers(request):
+    """Reachability of the dashboard and any configured peer servers.
+
+    Status is based on whether each endpoint actually responds, NOT on whether
+    it has recorded data. The dashboard itself is trivially up (it is serving
+    this request). Peers are read from ``RS_DASHBOARD_SERVERS`` -- a JSON list
+    of ``{"name", "url"}`` health URLs (e.g. the hangar tool servers); each is
+    probed with a short timeout in the threadpool.
+    """
+    import json as _json
+
+    out = [{"name": "dashboard", "url": None, "reachable": True,
+            "status_code": 200, "latency_ms": 0, "detail": "serving this request"}]
+    raw = os.environ.get("RS_DASHBOARD_SERVERS") or "[]"
+    try:
+        peers = _json.loads(raw)
+    except (ValueError, TypeError):
+        peers = []
+    probed = await run_in_threadpool(
+        lambda: [_probe(str(p.get("name") or p.get("url")), str(p.get("url")))
+                 for p in peers if isinstance(p, dict) and p.get("url")]
+    )
+    return JSONResponse(out + probed)
 
 
 async def state(request):
@@ -211,6 +285,40 @@ def _shell_ctx(request, plan_id, run_id, src, query) -> dict:
     }
 
 
+_SPA_DIR = _HERE / "static" / "spa"
+_SPA_INDEX = _SPA_DIR / "index.html"
+
+
+def _spa_built() -> bool:
+    return _SPA_INDEX.exists()
+
+
+async def spa_index(request):
+    """Serve the built React SPA shell.
+
+    Falls back to the legacy server-rendered htmx shell when the SPA has not
+    been built (a source checkout without ``frontend`` built), so the
+    dashboard still works pre-build and in tests. The SPA does its own routing
+    and data fetching against the ``/api/*`` endpoints; assets resolve under
+    the ``/static/spa/`` mount (Vite ``base``).
+    """
+    if _spa_built():
+        return FileResponse(_SPA_INDEX)
+    return await shell(request)
+
+
+async def spa_catchall(request):
+    """History-API fallback: client-side routes (``/study/...``,
+    ``/provenance/...``, ``/servers``) return the SPA shell so a deep link or
+    refresh lands on the app, not a 404. Real routes (API/static/health/auth)
+    are registered earlier and win; an unmatched ``/api`` or ``/view`` path is
+    a genuine miss, so return JSON 404 rather than masking it with the shell."""
+    path = request.path_params.get("spa_path", "")
+    if path.startswith(("api/", "view/", "static/")):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return await spa_index(request)
+
+
 async def shell(request):
     # ``study`` is a back-compat alias for ``plan_id`` (older omd tool results
     # and external links emitted ``?study=studyfs:<id>``).
@@ -321,8 +429,8 @@ def _content_routes() -> list[tuple[str, str, object]]:
     are NOT wrapped by the OIDC decorator.
     """
     return [
-        # shell
-        ("/", "shell", shell),
+        # shell -- SPA when built, legacy htmx shell otherwise
+        ("/", "shell", spa_index),
         # server-rendered view fragments (htmx)
         ("/view/state-strip/{plan_id}", "view_state_strip", view_state_strip),
         ("/view/requirements/{plan_id}", "view_requirements", view_requirements),
@@ -336,6 +444,9 @@ def _content_routes() -> list[tuple[str, str, object]]:
         ("/view/plots/{run_id}", "view_plots", view_plots),
         # JSON API
         ("/api/machine", "machine", machine),
+        ("/api/studies", "studies", studies),
+        ("/api/runs/{study_key}", "runs", runs),
+        ("/api/servers", "servers", servers),
         ("/api/state/{plan_id}", "state", state),
         ("/api/requirements/{plan_id}", "requirements", requirements),
         ("/api/plan/{plan_id}", "plan", plan),
@@ -377,6 +488,10 @@ def build_app() -> tuple[Starlette, str]:
         routes = [Route(p, decorator(h), name=n) for p, n, h in _content_routes()]
         routes += _build_oidc_routes(oidc_config)
         routes += [Route("/healthz", healthz), static]
+        # SPA history-API fallback, registered LAST so /api, /static, /healthz
+        # and the OIDC routes win. Auth-wrapped like the other content routes.
+        routes += [Route("/{spa_path:path}", decorator(spa_catchall),
+                         name="spa_catchall")]
 
         resource_server_url = os.environ.get(
             "RESOURCE_SERVER_URL", "http://localhost:7655").rstrip("/")
@@ -421,6 +536,7 @@ def build_app() -> tuple[Starlette, str]:
         "HANGAR_VIEWER_SESSION_SECRET) for per-user access control.")
     routes = [Route(p, h, name=n) for p, n, h in _content_routes()]
     routes += [Route("/healthz", healthz), static]
+    routes += [Route("/{spa_path:path}", spa_catchall, name="spa_catchall")]
     return Starlette(routes=routes, exception_handlers=exception_handlers), ""
 
 

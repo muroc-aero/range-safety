@@ -1,0 +1,19 @@
+/* App-level resets + base. Tokens come from design/styles.css; this only
+   sets the document baseline for the Instrument (app) surface. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--app-canvas);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--text-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Lucide icons render as inline SVG; keep them on the text baseline. */
+.lucide { display: inline-flex; vertical-align: middle; }

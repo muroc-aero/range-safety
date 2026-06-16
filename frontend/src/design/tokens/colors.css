@@ -1,0 +1,132 @@
+/* =============================================================
+   LAKESIDE AI — COLOR TOKENS
+   Two surface families share one brand: warm "paper" (marketing,
+   docs, authored long-form) and cool "app" (product instruments).
+   Brand green + blueprint blue carry across both. Status set is
+   shared. Base scales first, then semantic aliases.
+   ============================================================= */
+
+:root{
+  /* ---------- BASE: INK (neutral text/structure, cool slate) ---------- */
+  --ink-900:#11181f;   /* strongest text on light */
+  --ink-800:#16202b;
+  --ink-700:#1e2a36;   /* default heading on app */
+  --ink-600:#37434f;
+  --ink-500:#5b6976;   /* secondary text */
+  --ink-400:#7c8893;
+  --ink-300:#8b97a3;   /* tertiary / captions */
+  --ink-200:#aab4bd;
+
+  /* ---------- BASE: PAPER (warm neutrals — marketing/docs) ---------- */
+  --paper-0:#faf8f1;   /* base sheet */
+  --paper-1:#f5f1e7;   /* raised / alternate band */
+  --paper-2:#efe9da;   /* sunken / fill */
+  --paper-ink:#1b1f24; /* warm near-black for body on paper */
+  --paper-ink-2:#5a6066;
+  --paper-ink-3:#8b9097;
+  --paper-line:#ddd6c6;/* hairline rule */
+  --paper-line-2:#c9c4b4;/* heavier rule / drafting line */
+
+  /* ---------- BASE: APP (cool neutrals — product surfaces) ---------- */
+  --app-canvas:#eef1f4;/* desktop canvas behind panels */
+  --app-panel:#ffffff; /* card / panel */
+  --app-subtle:#f6f8fa;/* zebra / inset */
+  --app-line:#dbe1e7;  /* panel border */
+  --app-line-2:#eaeef2;/* inner divider */
+
+  /* ---------- BASE: GREEN (signal — the brand accent) ---------- */
+  --green-50:#e7f4ec;
+  --green-100:#d2ebda;
+  --green-200:#bfe3cd;  /* soft border */
+  --green-500:#34a85f;
+  --green-600:#1f9d55;  /* PRIMARY action / brand */
+  --green-700:#197a43;  /* hover / on-paper text-safe */
+  --green-800:#13602f;
+
+  /* ---------- BASE: BLUE (blueprint / aerospace structure) ---------- */
+  --blue-50:#eaf1f8;
+  --blue-100:#d6e5f1;
+  --blue-200:#c5dbef;   /* soft border */
+  --blue-400:#3b82c4;   /* links / interactive accents */
+  --blue-600:#1b5e9e;
+  --blue-700:#15487a;   /* PRIMARY blueprint / headings accent */
+  --blue-800:#0f3559;
+
+  /* ---------- BASE: STATUS ---------- */
+  --amber-600:#e08a1e;  --amber-50:#fbefd9;  --amber-200:#f2d59a;
+  --red-600:#d14b3c;    --red-50:#f8e6e3;    --red-200:#edb8b0;
+  --cyan-600:#1f8aa8;   --cyan-50:#e2f1f5;   /* info / V&V neutral */
+}
+
+/* =============================================================
+   SEMANTIC ALIASES — default (app / product) context.
+   Components reference these; surface context can remap them.
+   ============================================================= */
+:root{
+  /* text */
+  --text-strong:var(--ink-800);
+  --text-body:var(--ink-700);
+  --text-muted:var(--ink-500);
+  --text-faint:var(--ink-300);
+  --text-on-accent:#ffffff;
+  --text-link:var(--blue-600);
+
+  /* surfaces */
+  --surface-canvas:var(--app-canvas);
+  --surface-card:var(--app-panel);
+  --surface-subtle:var(--app-subtle);
+  --surface-inverse:var(--ink-800);
+
+  /* borders */
+  --border:var(--app-line);
+  --border-strong:var(--ink-200);
+  --border-divider:var(--app-line-2);
+
+  /* brand / accents */
+  --accent:var(--green-600);          /* primary action */
+  --accent-hover:var(--green-700);
+  --accent-soft:var(--green-50);
+  --accent-border:var(--green-200);
+  --accent-text:var(--green-700);
+
+  --blueprint:var(--blue-700);        /* structural / schematic */
+  --blueprint-soft:var(--blue-50);
+  --blueprint-border:var(--blue-200);
+  --blueprint-text:var(--blue-700);
+
+  /* status (semantic) */
+  --ok:var(--green-600);      --ok-soft:var(--green-50);    --ok-border:var(--green-200);
+  --warn:var(--amber-600);    --warn-soft:var(--amber-50);  --warn-border:var(--amber-200);
+  --error:var(--red-600);     --error-soft:var(--red-50);   --error-border:var(--red-200);
+  --info:var(--cyan-600);     --info-soft:var(--cyan-50);
+
+  /* focus ring */
+  --focus-ring:color-mix(in srgb, var(--blue-400) 55%, transparent);
+}
+
+/* =============================================================
+   PAPER CONTEXT — opt in with class="surface-paper" (or data-surface).
+   Remaps the same semantic names to the warm marketing palette so
+   components dropped onto paper inherit the right neutrals.
+   ============================================================= */
+.surface-paper,
+[data-surface="paper"]{
+  --text-strong:var(--paper-ink);
+  --text-body:var(--paper-ink);
+  --text-muted:var(--paper-ink-2);
+  --text-faint:var(--paper-ink-3);
+  --text-link:var(--blue-700);
+
+  --surface-canvas:var(--paper-0);
+  --surface-card:var(--paper-0);
+  --surface-subtle:var(--paper-1);
+  --surface-inverse:var(--paper-ink);
+
+  --border:var(--paper-line);
+  --border-strong:var(--paper-line-2);
+  --border-divider:var(--paper-line);
+
+  --accent-text:var(--green-700);
+  --accent:var(--green-700);
+  --accent-hover:var(--green-800);
+}

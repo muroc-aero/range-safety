@@ -14,7 +14,7 @@ This package adds three things on top of the Hangar tool servers:
    conclude), reading from both omd plan provenance and SDK session
    provenance.
 
-It is a private package (`muroc-aero/range-safety`) consumed as a git submodule
+It is a separate package (`muroc-aero/range-safety`) consumed as a git submodule
 under `the-hangar` at `packages/range-safety`. It reads the-hangar data
 read-only through the `hangar-results-reader` seam and a thin plot adapter, and
 builds on `hangar-sdk` and `hangar-omd`. It never writes to the analysis or

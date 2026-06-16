@@ -10,7 +10,7 @@ contracts from `the-hangar`. The boundary inventory lives in
 The dashboard is built and serving all five stages for both provenance
 patterns (omd plans and sdk sessions). What's done vs. what's left:
 
-**Done.** Phase 0 (repo extracted to private `muroc-aero/range-safety`,
+**Done.** Phase 0 (repo extracted to `muroc-aero/range-safety`,
 consumed as a submodule under `the-hangar/packages/range-safety`), Phases 1-2
 (state machine, read model, six views), Phase 2.5 (`Source` adapter seam:
 `OmdSource` + `SdkSessionSource`, shared graph builders, plot dispatch by
@@ -69,28 +69,28 @@ detail; the boxes are not maintained as a live tracker (this status block is).
    rendering goes through a thin one-file adapter. The viewer split runs
    as a parallel, non-blocking track.
 4. **Deploy.** The VPS runs a Docker image built in CI. CI resolves the
-   submodule with a deploy key, so the private source and creds never
-   land on the VPS. Fits the existing docker-compose + Caddy + scp flow
+   submodule with a deploy key, so build creds never land on the VPS.
+   Fits the existing docker-compose + Caddy + scp flow
    in `lakesideai-infra`.
 
 ## Phase 0 -- Repo and workspace setup
 
-Goal: `range-safety` is its own private repo with history, consumed as a
+Goal: `range-safety` is its own repo with history, consumed as a
 submodule, and the workspace stays clean for both full-stack and
 open-only clones. This phase contains the only irreversible, outward-
-facing step (a push to the private repo); run it deliberately.
+facing step (a push to the separate repo); run it deliberately.
 
 - [ ] **Extract with history.** From a fresh `the-hangar` clone:
       `git filter-repo --path packages/range-safety`, lift `src/` and
       `tests/` to the repo root, add a root `pyproject.toml`, push to
       `git@github.com:muroc-aero/range-safety.git` `main`. (Confirm before
-      pushing; this populates the currently-empty private repo.)
+      pushing; this populates the currently-empty repo.)
 - [ ] **Submodule.** In `the-hangar`: `git rm -r packages/range-safety`,
       then `git submodule add git@github.com:muroc-aero/range-safety.git packages/range-safety`.
 - [ ] **Workspace hygiene (the-hangar).** Move `hangar-range-safety`
       (and `hangar-viewer`) out of the committed root `pyproject.toml`
       member / dependency lists; add them conditionally in
-      `scripts/dev-setup.sh` so an open-only clone (`--pypi`, no private
+      `scripts/dev-setup.sh` so an open-only clone (`--pypi`, no
       submodule) `uv sync`s cleanly.
 - [ ] **Results-reader seam (the-hangar).** Extract read-only query
       functions + schema constants from `hangar.omd.db` into
@@ -174,7 +174,7 @@ design and the TODO backlog; this is the scheduled order.
 
 - [ ] Dockerfile that installs the workspace with the submodule resolved
       at build time.
-- [ ] CI deploy key for the private repo; image build + push.
+- [ ] CI deploy key for the submodule repo; image build + push.
 - [ ] Wire into `lakesideai-infra` docker-compose + Caddy route.
 - [ ] Auth: reuse the viewer's OIDC / basic-auth path.
 

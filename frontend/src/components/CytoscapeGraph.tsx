@@ -89,17 +89,15 @@ function buildStylesheet(): StyleRule[] {
     // failure / selection
     { selector: 'node[status="failed"]', style: { 'border-width': 2.5, 'border-color': C.red600, 'background-color': C.red50 } as never },
     { selector: 'node:selected', style: { 'border-width': 2.5, 'border-color': C.blue700 } as never },
-    // edges
+    // edges -- no text. Relation is conveyed by edge color + the legend; the
+    // old dashboard rendered label-less edges and that is what keeps pan/zoom
+    // smooth (autorotate labels + text-background repaint every frame).
     {
       selector: 'edge',
       style: {
         width: 1.4, 'curve-style': 'bezier',
         'line-color': C.line, 'target-arrow-color': C.ink300,
         'target-arrow-shape': 'triangle', 'arrow-scale': 0.85,
-        label: 'data(label)', 'font-family': 'IBM Plex Mono, monospace',
-        'font-size': 7.5, color: C.ink300, 'text-rotation': 'autorotate',
-        'text-background-color': C.panel, 'text-background-opacity': 0.85,
-        'text-background-padding': '1px',
       } as never,
     },
     // per-relation edge colors (ports dashboard.js, recoloured to light)
@@ -210,16 +208,12 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
       elements,
       style: buildStylesheet() as never,
       layout: layoutFor(graphStyle),
+      // Match the old dashboard's bare, smooth setup: no textureOnViewport
+      // (that delays off-screen repaint until you release a pan) and no
+      // pixelRatio override. wheelSensitivity bumped for snappier scroll-zoom.
       wheelSensitivity: 0.45,
       maxZoom: 3,
       minZoom: 0.15,
-      // Viewport performance: render a cached texture (not every element) while
-      // panning/zooming, and draw at 1x rather than full devicePixelRatio. On
-      // hi-DPI displays the 2x fill of bezier edges + rotated labels is what
-      // made zoom stutter; this keeps frames cheap.
-      textureOnViewport: true,
-      pixelRatio: 1,
-      motionBlur: false,
     });
     cyRef.current = cy;
     cy.on('tap', 'node', (evt) => {

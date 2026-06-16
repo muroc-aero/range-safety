@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import cytoscape from 'cytoscape';
 import type { Core, ElementDefinition } from 'cytoscape';
 import dagre from 'cytoscape-dagre';
+import { Expand, Maximize2, Minimize, Minus, Plus } from 'lucide-react';
 import type { Graph, GraphStyle } from '../api/types';
 
 /** One `{ selector, style }` rule. Cytoscape's exported style union changes
@@ -189,6 +191,13 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Keep onSelect in a ref so a parent passing an inline callback (new identity
+  // every render) does not tear down and rebuild the whole Cytoscape instance
+  // on each poll/re-render -- that churn is what made interaction feel laggy.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
 
   useEffect(() => {
     if (!ref.current) return;
@@ -201,15 +210,22 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
       elements,
       style: buildStylesheet() as never,
       layout: layoutFor(graphStyle),
-      wheelSensitivity: 0.2,
-      maxZoom: 2.5,
-      minZoom: 0.2,
+      wheelSensitivity: 0.45,
+      maxZoom: 3,
+      minZoom: 0.15,
+      // Viewport performance: render a cached texture (not every element) while
+      // panning/zooming, and draw at 1x rather than full devicePixelRatio. On
+      // hi-DPI displays the 2x fill of bezier edges + rotated labels is what
+      // made zoom stutter; this keeps frames cheap.
+      textureOnViewport: true,
+      pixelRatio: 1,
+      motionBlur: false,
     });
     cyRef.current = cy;
     cy.on('tap', 'node', (evt) => {
       const node = evt.target;
       setSelected(node.data());
-      onSelect?.(node.id(), node.data());
+      onSelectRef.current?.(node.id(), node.data());
     });
     cy.on('tap', (evt) => { if (evt.target === cy) setSelected(null); });
     cy.fit(undefined, 24);
@@ -217,12 +233,66 @@ export function CytoscapeGraph({ graph, graphStyle = 'provenance', height = 460,
       cy.destroy();
       cyRef.current = null;
     };
-  }, [graph, graphStyle, onSelect]);
+  }, [graph, graphStyle]);
+
+  // Resize + refit when entering/leaving fullscreen (container size changes).
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    const id = window.setTimeout(() => { cy.resize(); cy.fit(undefined, 24); }, 60);
+    return () => window.clearTimeout(id);
+  }, [fullscreen]);
+
+  // Escape exits fullscreen.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  const fit = () => cyRef.current?.fit(undefined, 24);
+  const zoomBy = (factor: number) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.zoom({ level: cy.zoom() * factor, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+  };
+
+  const shellStyle: CSSProperties = fullscreen
+    ? { position: 'fixed', inset: 0, zIndex: 1000, width: '100vw', height: '100vh', background: C.panel, borderRadius: 0 }
+    : { position: 'relative', width: '100%', height, background: C.panel, borderRadius: 'var(--radius-sm)', overflow: 'hidden' };
 
   return (
-    <div style={{ position: 'relative', width: '100%', height, background: C.panel, borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+    <div style={shellStyle}>
       <div ref={ref} style={{ width: '100%', height: '100%' }} />
+      <GraphControls
+        fullscreen={fullscreen}
+        onFit={fit}
+        onZoomIn={() => zoomBy(1.3)}
+        onZoomOut={() => zoomBy(1 / 1.3)}
+        onToggleFullscreen={() => setFullscreen((v) => !v)}
+      />
       {selected ? <NodeInspector data={selected} onClose={() => setSelected(null)} /> : null}
+    </div>
+  );
+}
+
+function GraphControls({ fullscreen, onFit, onZoomIn, onZoomOut, onToggleFullscreen }: {
+  fullscreen: boolean; onFit: () => void; onZoomIn: () => void; onZoomOut: () => void; onToggleFullscreen: () => void;
+}) {
+  const btn: CSSProperties = {
+    width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid var(--app-line)', background: 'var(--app-panel)', cursor: 'pointer',
+    borderRadius: 'var(--radius-sm)', color: 'var(--ink-500)', padding: 0,
+  };
+  return (
+    <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 5, zIndex: 3 }}>
+      <button style={btn} onClick={onZoomIn} title="Zoom in" aria-label="Zoom in"><Plus size={15} /></button>
+      <button style={btn} onClick={onZoomOut} title="Zoom out" aria-label="Zoom out"><Minus size={15} /></button>
+      <button style={btn} onClick={onFit} title="Fit to view" aria-label="Fit to view"><Maximize2 size={14} /></button>
+      <button style={btn} onClick={onToggleFullscreen} title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'} aria-label="Toggle fullscreen">
+        {fullscreen ? <Minimize size={15} /> : <Expand size={15} />}
+      </button>
     </div>
   );
 }

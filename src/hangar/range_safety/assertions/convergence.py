@@ -194,15 +194,22 @@ def _extract_objective_history(driver_cases: list[dict]) -> list[float]:
     if not all_keys:
         return []
 
-    # Prefer known objective-like variable names
+    # Prefer known objective-like variable names. A declared objective
+    # ("objective" in the name, e.g. mixed_objective) must win over DV
+    # names: MDO runs record design variables like ac|weights|W_battery,
+    # which the "weight" keyword would otherwise match, turning this
+    # check into a verdict on whichever DV happened to come out of the
+    # (unordered) key set first.
     obj_keywords = [
+        "objective",
         "structural_mass", "fuel_burn", "CD", "drag", "weight",
-        "mass", "objective",
+        "mass",
     ]
 
-    # Try to find the objective by keyword match
+    # Try to find the objective by keyword match (keys sorted for a
+    # deterministic pick when several match the same keyword)
     for keyword in obj_keywords:
-        for key in all_keys:
+        for key in sorted(all_keys):
             if keyword in key:
                 values = _extract_scalar_values(driver_cases, key)
                 if values:
